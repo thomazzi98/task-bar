@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>TaskBar</string>
+	<key>CFBundleExecutable</key>
+	<string>TaskBar</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>io.github.thomazzi98.taskbar</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>TaskBar</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<!-- taskbar:// links for automation (Shortcuts, Raycast, scripts). -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>io.github.thomazzi98.taskbar</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>taskbar</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<!-- Menu bar only: no Dock icon and no app menu. -->
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 Rafael Thomazzi. Released under the MIT License.</string>
+	<!-- Each permission is requested only when the matching feature is first used. -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>TaskBar uses the microphone to dictate notes. Audio is transcribed on this Mac and never leaves it.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>TaskBar transcribes your dictation on this Mac to turn speech into notes.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>TaskBar shows your upcoming events in the menu bar. Events are only read, never changed.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>TaskBar switches to the terminal tab that runs a Claude Code session when you ask it to.</string>
+</dict>
+</plist>

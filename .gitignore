@@ -1,0 +1,38 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/
+*.resolved
+
+# Build products
+dist/
+*.app
+*.dSYM/
+*.xcarchive
+
+# Xcode (the project builds with SwiftPM, but opening Package.swift creates these)
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+*.xcuserstate
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Claude Code local state
+.claude/settings.local.json
