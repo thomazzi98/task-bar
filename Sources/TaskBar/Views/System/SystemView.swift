@@ -16,6 +16,9 @@ struct SystemView: View {
                 VitalsView(snapshot: system.snapshot, cpuHistory: system.cpuHistory)
                     .padding(.horizontal, Design.gutter)
 
+                DevicesSection()
+                DrivesSection()
+
                 CollapsibleSection(title: "Apps", count: system.apps.count, isExpanded: $isAppsExpanded) {
                     ForEach(system.apps) { app in AppRow(app: app) }
                 }
@@ -247,7 +250,7 @@ private struct StatTile: View {
 
 // MARK: - Sections
 
-private struct CollapsibleSection<Content: View>: View {
+struct CollapsibleSection<Content: View>: View {
     let title: String
     let count: Int?
     @Binding var isExpanded: Bool
