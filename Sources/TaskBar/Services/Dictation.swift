@@ -69,6 +69,11 @@ enum Dictation {
         "en-US", "en-GB", "pt-BR", "pt-PT", "es-ES", "es-MX", "fr-FR", "de-DE", "it-IT", "ja-JP", "ko-KR", "zh-CN"
     ]
 
+    /// A language's name in the current locale, such as "Portuguese (Brazil)".
+    static func label(for identifier: String) -> String {
+        Locale.current.localizedString(forIdentifier: identifier) ?? identifier
+    }
+
     /// Languages the on-device recogniser accepts, as BCP 47 identifiers.
     /// Read once: the list does not change while the app runs, and views read it while drawing.
     static let supportedLocaleIdentifiers: [String] = SFSpeechRecognizer.supportedLocales()

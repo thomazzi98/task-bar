@@ -82,7 +82,7 @@ struct SettingsView: View {
                         PickerRow("Dictation language", selection: $settings.dictationLocaleIdentifier) {
                             Text("System language").tag("")
                             ForEach(Dictation.commonLocaleIdentifiers, id: \.self) { identifier in
-                                Text(Locale.current.localizedString(forIdentifier: identifier) ?? identifier).tag(identifier)
+                                Text(Dictation.label(for: identifier)).tag(identifier)
                             }
                         }
                         PickerRow("Tidy up model", selection: $settings.polisherPreference) {
@@ -129,7 +129,8 @@ struct SettingsView: View {
                                 clipboard.clearAll()
                             }
                         }
-                        Text("Copied text is kept on this Mac. Passwords from password managers are never saved.").settingsCaption()
+                        Text("Secrets that password managers mark as concealed are never recorded. History is saved on this Mac.")
+                            .settingsCaption()
                     }
 
                     SettingsSection("Data") {

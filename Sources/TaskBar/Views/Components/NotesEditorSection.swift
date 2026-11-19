@@ -96,14 +96,8 @@ struct NotesEditorSection: View {
     /// Shows the dictation language as a short code and switches it in one click.
     private var dictationLanguageMenu: some View {
         Menu {
-            languageItem("English (en-US)", identifier: "en-US")
-            languageItem("Português (Brasil) (pt-BR)", identifier: "pt-BR")
-            Divider()
-            ForEach(Dictation.commonLocaleIdentifiers.filter { $0 != "en-US" && $0 != "pt-BR" }, id: \.self) { identifier in
-                languageItem(
-                    "\(Locale.current.localizedString(forIdentifier: identifier) ?? identifier) (\(identifier))",
-                    identifier: identifier
-                )
+            ForEach(Dictation.commonLocaleIdentifiers, id: \.self) { identifier in
+                languageItem("\(Dictation.label(for: identifier)) (\(identifier))", identifier: identifier)
             }
             Divider()
             languageItem("System language", identifier: "")
@@ -115,9 +109,7 @@ struct NotesEditorSection: View {
                 .frame(height: 24)
                 .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .plainMenu()
         .help("Dictation language")
     }
 
