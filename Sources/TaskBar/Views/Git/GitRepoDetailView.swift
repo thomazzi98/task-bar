@@ -87,7 +87,7 @@ struct GitRepoDetailView: View {
 
     private var abbreviatedPath: String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return snapshot.root.hasPrefix(home) ? "~" + snapshot.root.dropFirst(home.count) : snapshot.root
+        return Formatting.abbreviatingHome(snapshot.root, home: home)
     }
 
     // MARK: Sections
@@ -95,7 +95,7 @@ struct GitRepoDetailView: View {
     @ViewBuilder
     private var changesSection: some View {
         if let status = snapshot.status {
-            section(title: "Changes", detail: status.totalChanges > 0 ? "\(status.totalChanges)" : nil) {
+            SectionBlock(title: "Changes", detail: status.totalChanges > 0 ? "\(status.totalChanges)" : nil) {
                 if status.changes.isEmpty {
                     Text("Nothing changed. Working tree is clean.")
                         .font(.system(size: 11.5))
@@ -132,7 +132,7 @@ struct GitRepoDetailView: View {
     @ViewBuilder
     private var commitsSection: some View {
         if !snapshot.commits.isEmpty {
-            section(title: "Recent commits", detail: nil) {
+            SectionBlock(title: "Recent commits", detail: nil) {
                 VStack(alignment: .leading, spacing: 7) {
                     ForEach(snapshot.commits) { commit in
                         HStack(alignment: .top, spacing: 8) {
@@ -159,7 +159,7 @@ struct GitRepoDetailView: View {
     @ViewBuilder
     private var branchesSection: some View {
         if !snapshot.branches.isEmpty {
-            section(title: "Branches", detail: nil) {
+            SectionBlock(title: "Branches", detail: nil) {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(snapshot.branches) { branch in
                         HStack(spacing: 7) {
@@ -195,7 +195,7 @@ struct GitRepoDetailView: View {
     @ViewBuilder
     private var pullRequestsSection: some View {
         if !snapshot.pullRequests.isEmpty {
-            section(title: "Open pull requests", detail: "\(snapshot.pullRequests.count)") {
+            SectionBlock(title: "Open pull requests", detail: "\(snapshot.pullRequests.count)") {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(snapshot.pullRequests) { pull in
                         PullRequestRow(pull: pull)
@@ -203,7 +203,7 @@ struct GitRepoDetailView: View {
                 }
             }
         } else if git.isGitHubCLIMissing {
-            section(title: "Open pull requests", detail: nil) {
+            SectionBlock(title: "Open pull requests", detail: nil) {
                 Text("Install GitHub CLI (gh) to see pull requests.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.tertiary)
@@ -211,21 +211,6 @@ struct GitRepoDetailView: View {
         }
     }
 
-    private func section(title: String, detail: String?, @ViewBuilder content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 5) {
-                Text(title.uppercased())
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                if let detail {
-                    Text(detail)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            content()
-        }
-    }
 }
 
 /// A pull request that opens on GitHub when clicked.

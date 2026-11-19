@@ -18,8 +18,10 @@ public enum GitCommands {
         ["-C", directory, "rev-parse", "--show-toplevel"]
     }
 
+    /// `-z` ends every record with a NUL and never quotes a path, so names with spaces, quotes or
+    /// non-ASCII characters come through exactly as they are on disk.
     public static func status(in root: String) -> [String] {
-        ["-C", root, "-c", "core.quotepath=off", "status", "--porcelain=v2", "--branch"]
+        ["-C", root, "status", "--porcelain=v2", "--branch", "-z"]
     }
 
     public static func log(in root: String) -> [String] {
@@ -44,15 +46,20 @@ public enum GitCommands {
     }
 }
 
-/// Reads `git status --porcelain=v2 --branch`.
+/// Reads `git status --porcelain=v2 --branch -z`.
 public enum GitStatusParser {
     public static let defaultChangeLimit = 20
 
-    /// Parses the output into counts and the first `changeLimit` changed paths.
-    /// Unknown lines are skipped, so a newer git never breaks the view.
+    /// Parses the NUL-separated output into counts and the first `changeLimit` changed paths.
+    /// A rename or copy is followed by its original path as a record of its own. Unknown lines
+    /// are skipped, so a newer git never breaks the view.
     public static func parse(_ output: String, changeLimit: Int = defaultChangeLimit) -> GitRepoStatus {
         var status = GitRepoStatus()
-        for line in output.split(separator: "\n", omittingEmptySubsequences: true) {
+        let records = output.split(separator: "\0", omittingEmptySubsequences: true)
+        var index = 0
+        while index < records.count {
+            let line = records[index]
+            index += 1
             if line.hasPrefix("# ") {
                 parseHeader(line, into: &status)
                 continue
@@ -60,8 +67,13 @@ public enum GitStatusParser {
             guard let kind = line.first else { continue }
             let entry: Entry?
             switch kind {
-            case "1": entry = ordinaryEntry(line)
-            case "2": entry = renamedEntry(line)
+            case "1":
+                entry = ordinaryEntry(line)
+            case "2":
+                // Always consume the original path, even when this entry turns out unreadable.
+                let original = index < records.count ? String(records[index]) : nil
+                index += 1
+                entry = renamedEntry(line, originalPath: original)
             case "u": entry = unmergedEntry(line)
             case "?": entry = untrackedEntry(line)
             default: entry = nil // Ignored files (`!`) are not requested, so they are skipped.
@@ -105,34 +117,37 @@ public enum GitStatusParser {
     private static func ordinaryEntry(_ line: Substring) -> Entry? {
         let fields = line.split(separator: " ", maxSplits: 8, omittingEmptySubsequences: false)
         guard fields.count == 9, let codes = statusCodes(fields[1]) else { return nil }
+        let hasIndexChange = codes.index != "."
+        let hasWorktreeChange = codes.worktree != "."
         return Entry(
             change: GitChange(
                 path: String(fields[8]),
                 kind: kind(index: codes.index, worktree: codes.worktree),
-                isStaged: codes.index != "."
+                isStaged: hasIndexChange
             ),
-            hasIndexChange: codes.index != ".",
-            hasWorktreeChange: codes.worktree != "."
+            hasIndexChange: hasIndexChange,
+            hasWorktreeChange: hasWorktreeChange
         )
     }
 
-    /// `2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <X><score> <path>\t<origPath>`
-    private static func renamedEntry(_ line: Substring) -> Entry? {
+    /// `2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <X><score> <path>`, with the original path in the
+    /// record that follows.
+    private static func renamedEntry(_ line: Substring, originalPath: String?) -> Entry? {
         let fields = line.split(separator: " ", maxSplits: 9, omittingEmptySubsequences: false)
         guard fields.count == 10, let codes = statusCodes(fields[1]) else { return nil }
-        let paths = fields[9].split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
-        guard let path = paths.first else { return nil }
         // The score field starts with R (renamed) or C (copied).
         let isCopy = fields[8].first == "C"
+        let hasIndexChange = codes.index != "."
+        let hasWorktreeChange = codes.worktree != "."
         return Entry(
             change: GitChange(
-                path: String(path),
-                originalPath: paths.count == 2 ? String(paths[1]) : nil,
+                path: String(fields[9]),
+                originalPath: originalPath,
                 kind: isCopy ? .copied : .renamed,
-                isStaged: codes.index != "."
+                isStaged: hasIndexChange
             ),
-            hasIndexChange: codes.index != ".",
-            hasWorktreeChange: codes.worktree != "."
+            hasIndexChange: hasIndexChange,
+            hasWorktreeChange: hasWorktreeChange
         )
     }
 
@@ -228,9 +243,10 @@ public enum GitBranchParser {
         for part in inner.split(separator: ",") {
             let words = part.split(separator: " ")
             guard let label = words.first else { continue }
+            let count = Int(words.dropFirst().first ?? "") ?? 0
             switch label {
-            case "ahead": result.ahead = words.count > 1 ? Int(words[1]) ?? 0 : 0
-            case "behind": result.behind = words.count > 1 ? Int(words[1]) ?? 0 : 0
+            case "ahead": result.ahead = count
+            case "behind": result.behind = count
             case "gone": result.gone = true
             default: continue
             }
