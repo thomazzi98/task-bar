@@ -20,6 +20,7 @@ enum DeveloperCommand {
     case polish(style: PolishStyle, preference: PolisherPreference)
     case transcribe(file: URL, locale: Locale)
     case renderSnapshots(directory: URL)
+    case renderLive(directory: URL)
     case ports
     case drives
     case devices
@@ -42,6 +43,9 @@ enum DeveloperCommand {
       --transcribe <audio-file>        Transcribe an audio file with the dictation engine.
           [--locale <bcp47>]
       --render-snapshots <directory>   Render every screen with sample data to PNG files.
+      --render-live <directory>        Render the live-data screens from this Mac to PNG files.
+                                       Run through `open -W -n TaskBar.app --args ...` so macOS
+                                       asks for Bluetooth on behalf of the app, not the terminal.
       --ports                          List the TCP ports that are listening, with their owners.
       --drives                         List the mounted volumes with their space and flags.
       --devices                        List connected peripherals and their battery levels.
@@ -88,6 +92,9 @@ enum DeveloperCommand {
             guard let path = value(after: "--transcribe") else { return nil }
             let locale = value(after: "--locale").map(Locale.init(identifier:)) ?? .current
             self = .transcribe(file: URL(fileURLWithPath: path), locale: locale)
+        case "--render-live":
+            guard let path = value(after: "--render-live") else { return nil }
+            self = .renderLive(directory: URL(fileURLWithPath: path, isDirectory: true))
         case "--render-snapshots":
             guard let path = value(after: "--render-snapshots") else { return nil }
             self = .renderSnapshots(directory: URL(fileURLWithPath: path, isDirectory: true))
@@ -145,6 +152,9 @@ enum DeveloperCommand {
                 try await transcribe(file: file, locale: locale)
             case .renderSnapshots(let directory):
                 let files = try SnapshotRenderer.renderAll(into: directory)
+                files.forEach { print($0.path) }
+            case .renderLive(let directory):
+                let files = try await SnapshotRenderer.renderLive(into: directory)
                 files.forEach { print($0.path) }
             case .ports:
                 await printPorts()

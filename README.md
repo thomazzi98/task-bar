@@ -389,6 +389,13 @@ echo "rough notes…" | $TaskBar --polish note   # run "Tidy up" from a pipe
 $TaskBar --transcribe memo.m4a --locale pt-BR  # the dictation engine on an audio file
 ```
 
+To see the live-data screens (System, Usage, Git, Links, Clipboard) rendered from your own Mac, run
+the app through `open`, so macOS asks for Bluetooth on the app's behalf rather than the terminal's:
+
+```sh
+open -W -n dist/TaskBar.app --args --render-live /tmp/taskbar-live
+```
+
 **A scratch data folder.** Point the app somewhere else to experiment without touching your data:
 
 ```sh

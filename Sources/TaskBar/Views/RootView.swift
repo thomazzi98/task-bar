@@ -102,7 +102,7 @@ private struct HeaderBar: View {
 
     var body: some View {
         @Bindable var appState = appState
-        HStack(spacing: 3) {
+        HStack(spacing: 2) {
             if appState.isSearching {
                 searchField(text: $appState.searchQuery)
             } else {
@@ -186,7 +186,7 @@ private struct TabButton: View {
                 }
             }
             .foregroundStyle(isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
-            .padding(.horizontal, isSelected ? 10 : 8)
+            .padding(.horizontal, isSelected ? 9 : 6)
             .frame(height: 26)
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)

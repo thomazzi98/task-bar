@@ -97,6 +97,50 @@ enum SnapshotRenderer {
         return written
     }
 
+    /// Renders the screens that read live data (System, Agents › Usage, Git, Links, Clipboard)
+    /// from this Mac, read-only, to check them without opening the popover. Nothing is saved:
+    /// the user's files are read, never written.
+    static func renderLive(into directory: URL, settle: Duration = .seconds(12)) async throws -> [URL] {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let suiteName = "taskbar.live-snapshots.\(UUID().uuidString)"
+        defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+        let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+        let environment = AppEnvironment(paths: .live(), defaults: defaults)
+        environment.agents.start()
+        environment.appState.isPanelVisible = true
+        environment.system.setPanelVisible(true)
+
+        let scenes: [(name: String, tab: AppTab, show: (Bool) -> Void)] = [
+            ("live-system", .system, { visible in
+                environment.system.setDetailVisible(visible)
+                environment.peripherals.setVisible(visible)
+                environment.ports.setVisible(visible)
+            }),
+            ("live-usage", .agents, { visible in
+                environment.usage.section = visible ? .usage : .sessions
+                environment.usage.setVisible(visible)
+            }),
+            ("live-git", .git, { environment.git.setVisible($0) }),
+            ("live-links", .links, { _ in }),
+            ("live-clipboard", .clipboard, { _ in })
+        ]
+
+        var written: [URL] = []
+        for scene in scenes {
+            environment.appState.select(scene.tab)
+            scene.show(true)
+            // Sleeping, not spinning the run loop, lets the view models' main-actor tasks run.
+            try await Task.sleep(for: settle)
+            let image = try render(environment.rootView(), appearance: .aqua)
+            scene.show(false)
+            let url = directory.appendingPathComponent("\(scene.name).png")
+            try write(image, to: url)
+            written.append(url)
+        }
+        environment.agents.stop()
+        return written
+    }
+
     // MARK: Rendering
 
     private static func render(_ view: some View, appearance: NSAppearance.Name) throws -> NSImage {
