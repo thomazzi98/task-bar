@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Token counts of one API message.
@@ -54,10 +55,26 @@ public struct UsageRecord: Equatable, Sendable {
     }
 }
 
+/// Byte searches over transcript bytes, done with libc rather than `Data`'s generic search.
+enum ByteSearch {
+    /// Index of the first newline at or after `start`, or nil.
+    static func firstNewline(in bytes: UnsafeRawBufferPointer, from start: Int) -> Int? {
+        guard start < bytes.count, let base = bytes.baseAddress else { return nil }
+        guard let found = memchr(base + start, Int32(UInt8(ascii: "\n")), bytes.count - start) else { return nil }
+        return UnsafeRawPointer(found) - base
+    }
+
+    /// Whether `needle` occurs anywhere in `bytes`.
+    static func contains(_ needle: [UInt8], in bytes: UnsafeRawBufferPointer) -> Bool {
+        guard let base = bytes.baseAddress, bytes.count >= needle.count else { return false }
+        return needle.withUnsafeBytes { memmem(base, bytes.count, $0.baseAddress, $0.count) != nil }
+    }
+}
+
 /// Turns one transcript line into a usage record. Lines without a usage marker are rejected
 /// by a cheap byte search, so the JSON decoder only sees the lines that can matter.
 public struct UsageLineParser {
-    private static let marker = Data(#""usage""#.utf8)
+    private static let marker = Array(#""usage""#.utf8)
 
     private let decoder = JSONDecoder()
     private let timestamps: ISO8601DateFormatter = {
@@ -75,7 +92,7 @@ public struct UsageLineParser {
     ///   - projectFolder: the project's folder name, used when `cwd` is missing.
     ///   - fallbackSessionID: the transcript's file name, used when `sessionId` is missing.
     public func record(from line: Data, projectFolder: String, fallbackSessionID: String) -> UsageRecord? {
-        guard line.range(of: Self.marker) != nil,
+        guard line.withUnsafeBytes({ ByteSearch.contains(Self.marker, in: $0) }),
               let decoded = try? decoder.decode(Line.self, from: line),
               decoded.type == "assistant",
               let message = decoded.message,

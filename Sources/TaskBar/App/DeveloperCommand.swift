@@ -335,7 +335,9 @@ enum DeveloperCommand {
         print("period:    \(period.title)   messages: \(totals.messages)   bytes read: \(Formatting.bytes(UInt64(report.bytesRead)))")
         print("tokens:    \(usage.total) (input \(usage.input), output \(usage.output), cache write \(usage.cacheWrite), cache read \(usage.cacheRead))")
         print("est. cost: \(cost)   cache hit: \(cache)")
-        print("scan took: \(elapsed.formatted(.units(allowed: [.milliseconds])))")
+        // Plain seconds with an explicit unit: a pt-BR locale would print 18.418 ms as "18 ms".
+        let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
+        print(String(format: "scan took: %.2f s", seconds))
 
         print("\nby model:")
         for row in report.byModel {
