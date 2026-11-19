@@ -14,6 +14,7 @@ final class AppEnvironment {
     let notes: NotesViewModel
     let links: LinksViewModel
     let agents: AgentsViewModel
+    let usage: UsageViewModel
     let agenda: AgendaViewModel
     let system = SystemViewModel()
     let ports = PortsViewModel()
@@ -36,6 +37,7 @@ final class AppEnvironment {
         notes = NotesViewModel(store: JSONFileStore(url: paths.notesFile))
         links = LinksViewModel(store: JSONFileStore(url: paths.linksFile))
         agents = AgentsViewModel(paths: paths)
+        usage = UsageViewModel(paths: paths)
         agenda = AgendaViewModel(service: CalendarService(), notifier: notifier, settings: settings)
         let clipboardModel = ClipboardViewModel(store: JSONFileStore(url: paths.clipboardFile))
         clipboard = clipboardModel
@@ -53,6 +55,7 @@ final class AppEnvironment {
             .environment(notes)
             .environment(links)
             .environment(agents)
+            .environment(usage)
             .environment(agenda)
             .environment(system)
             .environment(ports)
@@ -151,6 +154,7 @@ final class AppEnvironment {
         peripherals.setVisible(showsTab && tab == .system)
         agents.setVisible(showsTab && tab == .agents)
         git.setVisible(showsTab && tab == .git)
+        usage.setVisible(showsTab && tab == .agents && usage.section == .usage)
         agenda.setVisible(isVisible && settings.isEnabled(.calendar))
     }
 
@@ -160,6 +164,7 @@ final class AppEnvironment {
             _ = appState.selectedTab
             _ = appState.isShowingSettings
             _ = appState.isSearching
+            _ = usage.section
             _ = settings.disabledTabs
             _ = settings.showsStoppedContainers
         } onChange: { [weak self] in

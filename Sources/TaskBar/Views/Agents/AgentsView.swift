@@ -5,6 +5,7 @@ import TaskBarCore
 /// The Agents tab: every Claude Code session running on this Mac and what it needs.
 struct AgentsView: View {
     @Environment(AgentsViewModel.self) private var agents
+    @Environment(UsageViewModel.self) private var usage
     @AppStorage("agents.hooksHintDismissed") private var isHooksHintDismissed = false
 
     var body: some View {
@@ -13,11 +14,30 @@ struct AgentsView: View {
                 AgentDetailView(session: session)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             } else {
-                list
-                    .transition(.move(edge: .leading).combined(with: .opacity))
+                VStack(spacing: 0) {
+                    sectionPicker
+                        .padding(.horizontal, Design.gutter)
+                        .padding(.top, 10)
+                    if usage.section == .usage {
+                        UsageView()
+                    } else {
+                        list
+                    }
+                }
+                .transition(.move(edge: .leading).combined(with: .opacity))
             }
         }
         .animation(.easeOut(duration: 0.16), value: agents.selectedSessionID)
+    }
+
+    private var sectionPicker: some View {
+        Picker("View", selection: Bindable(usage).section) {
+            ForEach(AgentsSection.allCases) { section in
+                Text(section.title).tag(section)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
     }
 
     private var list: some View {
