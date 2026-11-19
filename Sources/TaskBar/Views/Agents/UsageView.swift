@@ -66,14 +66,14 @@ struct UsageView: View {
     private func totals(_ report: UsageReport) -> some View {
         let total = report.totals
         let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
-        return LazyVGrid(columns: columns, spacing: 8) {
+        return LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
             UsageStatTile(
                 title: "Tokens",
                 value: Formatting.compact(total.usage.total),
                 detail: "\(Formatting.compact(total.usage.input)) in · \(Formatting.compact(total.usage.output)) out"
             )
-            UsageStatTile(title: "Est. cost", value: Formatting.money(total.cost), detail: nil)
-            UsageStatTile(title: "Messages", value: "\(total.messages)", detail: nil)
+            UsageStatTile(title: "Est. cost", value: Formatting.money(total.cost), detail: "at API list prices")
+            UsageStatTile(title: "Messages", value: "\(total.messages)", detail: "assistant replies")
             UsageStatTile(
                 title: "Cache hit",
                 value: total.cacheHitRate.map { Formatting.percent($0) } ?? "—",

@@ -24,7 +24,8 @@ struct UsageStatTile: View {
                     .lineLimit(1)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // Top-aligned so tiles in a row line up even when one has no caption.
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(9)
         .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.primary.opacity(0.05)))
         .accessibilityElement(children: .combine)

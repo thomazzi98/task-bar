@@ -83,6 +83,8 @@ dependencies that does no work at all while its popover is closed.
 
 ### Links, clipboard, Git and usage
 
+<img align="right" width="300" alt="The Git dashboard" src="docs/screenshots/git-light.png">
+
 - **Links** — folders of bookmarks with a color and an icon. Paste a link to add it; one click opens it.
 - **Clipboard** — history of what you copied, searchable, with pins. One click copies an item again.
   Items that password managers mark as secret are never recorded, and the history can be turned off.
@@ -90,6 +92,8 @@ dependencies that does no work at all while its popover is closed.
   pending changes, recent commits, branches and, with the GitHub CLI (`gh`), open pull requests.
 - **Usage** (in Agents) — Claude Code tokens, estimated cost at API list prices, cache hit rate, and
   the breakdown by model, project and session for today, 7 days, 30 days or all time.
+
+<br clear="right">
 
 ## Light by design
 

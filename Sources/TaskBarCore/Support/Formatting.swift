@@ -52,10 +52,10 @@ public enum Formatting {
         return trimmed + suffix
     }
 
-    /// Estimated US dollars such as `US$ 1.23`, or an em dash when no price is known.
+    /// Estimated US dollars such as `$1.23`, or an em dash when no price is known.
     public static func money(_ value: Double?) -> String {
         guard let value else { return "—" }
-        return String(format: "US$ %.2f", value)
+        return String(format: "$%.2f", value)
     }
 
     /// Uptime such as `3d 4h` or `5h 12m`.

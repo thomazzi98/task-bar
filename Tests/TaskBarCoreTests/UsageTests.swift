@@ -422,8 +422,8 @@ struct UsageFormatTests {
 
     @Test func money() {
         #expect(Formatting.money(nil) == "—")
-        #expect(Formatting.money(1.234) == "US$ 1.23")
-        #expect(Formatting.money(0) == "US$ 0.00")
+        #expect(Formatting.money(1.234) == "$1.23")
+        #expect(Formatting.money(0) == "$0.00")
     }
 
     @Test func modelNames() {

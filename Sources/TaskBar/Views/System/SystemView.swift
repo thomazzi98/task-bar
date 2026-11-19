@@ -230,8 +230,10 @@ private struct StatTile: View {
         VStack(alignment: .leading, spacing: 1.5) {
             Label(title, systemImage: symbol).labelStyle(CompactLabelStyle())
                 .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
-            Text(value).font(.system(size: 12, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8)
-            Text(caption).font(.system(size: 10)).foregroundStyle(.tertiary).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8)
+            // Short values sized to fit: a scale factor here truncates them when the panel narrows
+            // for a visible scroll bar.
+            Text(value).font(.system(size: 12, weight: .semibold)).monospacedDigit().lineLimit(1).fixedSize()
+            Text(caption).font(.system(size: 10)).foregroundStyle(.tertiary).monospacedDigit().lineLimit(1)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 7)
