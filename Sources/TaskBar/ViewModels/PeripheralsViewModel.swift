@@ -63,6 +63,13 @@ final class PeripheralsViewModel {
         actionMessage = nil
     }
 
+    /// Replaces the displayed devices and drives. Used only by snapshot rendering, which never
+    /// starts sampling.
+    func applyPreview(devices: [PeripheralDevice], volumes: [MountedVolume]) {
+        self.devices = devices
+        self.volumes = volumes
+    }
+
     /// Opens the drive in Finder.
     func open(_ volume: MountedVolume) {
         NSWorkspace.shared.open(volume.url)

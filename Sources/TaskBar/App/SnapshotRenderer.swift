@@ -14,7 +14,16 @@ enum SnapshotRenderer {
         let name: String
         /// Shows notes rendered rather than as raw Markdown.
         var rendersNotes = false
+        /// Scrolls the screen before capturing, for sections below the fold.
+        var scroll: Scroll?
         let prepare: (AppEnvironment, DemoData) -> Void
+    }
+
+    private enum Scroll {
+        /// The bottom of the screen.
+        case end
+        /// A distance in points from the top of the scrolling content.
+        case offset(CGFloat)
     }
 
     private static let scenes: [Scene] = [
@@ -35,17 +44,54 @@ enum SnapshotRenderer {
         },
         Scene(name: "agents") { environment, _ in
             environment.notes.closeEditor()
+            environment.usage.section = .sessions
             environment.appState.select(.agents)
         },
         Scene(name: "agent-detail") { environment, demo in
             environment.appState.select(.agents)
             environment.agents.select(demo.featuredSessionID)
         },
+        Scene(name: "usage") { environment, _ in
+            environment.agents.select(nil)
+            environment.usage.section = .usage
+            environment.appState.select(.agents)
+        },
+        Scene(name: "usage-projects", scroll: .offset(400)) { environment, _ in
+            environment.usage.section = .usage
+            environment.appState.select(.agents)
+        },
         Scene(name: "calendar") { environment, _ in
             environment.agents.select(nil)
+            environment.usage.section = .sessions
             environment.appState.select(.calendar)
         },
+        Scene(name: "links") { environment, _ in
+            environment.links.closeFolder()
+            environment.appState.select(.links)
+        },
+        Scene(name: "links-folder") { environment, demo in
+            environment.appState.select(.links)
+            environment.links.open(demo.workFolderID)
+        },
+        Scene(name: "clipboard") { environment, _ in
+            environment.appState.select(.clipboard)
+        },
+        Scene(name: "git") { environment, _ in
+            environment.git.select(nil)
+            environment.appState.select(.git)
+        },
+        Scene(name: "git-detail") { environment, demo in
+            environment.appState.select(.git)
+            environment.git.select(demo.paymentsRepoRoot)
+        },
+        Scene(name: "git-detail-prs", scroll: .end) { environment, demo in
+            environment.appState.select(.git)
+            environment.git.select(demo.paymentsRepoRoot)
+        },
         Scene(name: "system") { environment, _ in
+            environment.appState.select(.system)
+        },
+        Scene(name: "system-ports", scroll: .end) { environment, _ in
             environment.appState.select(.system)
         },
         Scene(name: "settings") { environment, _ in
@@ -72,14 +118,16 @@ enum SnapshotRenderer {
                 claudeDirectory: scratch.appendingPathComponent("claude", isDirectory: true)
             )
             let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+            // Links and Clipboard read their files when the app starts, so they are seeded first.
+            let workFolderID = try DemoData.writeStores(to: paths)
             let environment = AppEnvironment(paths: paths, defaults: defaults)
-            let demo = DemoData.install(in: environment)
+            let demo = DemoData.install(in: environment, workFolderID: workFolderID)
 
             var images: [String: NSImage] = [:]
             for scene in scenes {
                 defaults.set(scene.rendersNotes, forKey: "editor.opensInPreview")
                 scene.prepare(environment, demo)
-                let image = try render(environment.rootView(), appearance: appearanceName)
+                let image = try render(environment.rootView(), appearance: appearanceName, scroll: scene.scroll)
                 images[scene.name] = image
                 let url = directory.appendingPathComponent("\(scene.name)-\(suffix).png")
                 try write(image, to: url)
@@ -87,7 +135,7 @@ enum SnapshotRenderer {
             }
 
             let banner = composeBanner(
-                [images["task-detail"], images["agents"], images["system"]].compactMap { $0 },
+                [images["task-detail"], images["usage"], images["system"]].compactMap { $0 },
                 isDark: suffix == "dark"
             )
             let bannerURL = directory.appendingPathComponent("banner-\(suffix).png")
@@ -143,7 +191,7 @@ enum SnapshotRenderer {
 
     // MARK: Rendering
 
-    private static func render(_ view: some View, appearance: NSAppearance.Name) throws -> NSImage {
+    private static func render(_ view: some View, appearance: NSAppearance.Name, scroll: Scroll? = nil) throws -> NSImage {
         let shape = RoundedRectangle(cornerRadius: PopoverPanel.cornerRadius, style: .continuous)
         let content = view
             .frame(width: size.width, height: size.height)
@@ -166,6 +214,20 @@ enum SnapshotRenderer {
         RunLoop.main.run(until: Date().addingTimeInterval(0.35))
         hosting.layoutSubtreeIfNeeded()
 
+        if let scroll, let scrollView = firstSubview(of: NSScrollView.self, in: hosting) {
+            let clip = scrollView.contentView
+            let lowest = max((scrollView.documentView?.frame.height ?? 0) - clip.bounds.height, 0)
+            let target: CGFloat
+            switch scroll {
+            case .end: target = lowest
+            case .offset(let distance): target = min(distance, lowest)
+            }
+            clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: target))
+            scrollView.reflectScrolledClipView(clip)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+            hosting.layoutSubtreeIfNeeded()
+        }
+
         guard let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
             throw CocoaError(.fileWriteUnknown)
         }
@@ -175,6 +237,16 @@ enum SnapshotRenderer {
         let image = NSImage(size: size)
         image.addRepresentation(bitmap)
         return image
+    }
+
+    /// The first view of the given type in the tree, depth first. Used to reach the scroll view
+    /// behind a SwiftUI `ScrollView`.
+    private static func firstSubview<T: NSView>(of type: T.Type, in view: NSView) -> T? {
+        if let match = view as? T { return match }
+        for subview in view.subviews {
+            if let match = firstSubview(of: type, in: subview) { return match }
+        }
+        return nil
     }
 
     /// Lays several screens side by side on a soft gradient, for the top of the README.
@@ -226,14 +298,245 @@ struct DemoData {
     let featuredTaskID: UUID
     let promptNoteID: UUID
     let featuredSessionID: String
+    /// The "Work" folder of the Links tab.
+    let workFolderID: UUID
+    /// The repository the Git detail scene opens.
+    let paymentsRepoRoot: String
 
-    static func install(in environment: AppEnvironment, now: Date = Date()) -> DemoData {
+    /// Writes the Links and Clipboard documents into the scratch support directory. Returns the
+    /// ID of the "Work" folder. Must run before `AppEnvironment` is created, since both models
+    /// read their files in `init`.
+    static func writeStores(to paths: AppPaths, now: Date = Date()) throws -> UUID {
+        func ago(_ seconds: TimeInterval) -> Date { now.addingTimeInterval(-seconds) }
+        let minute: TimeInterval = 60
+        let hour: TimeInterval = 3_600
+        let day: TimeInterval = 86_400
+
+        let work = LinkFolder(name: "Work", colorName: "blue", symbol: "briefcase", links: [
+            LinkItem(title: "GitHub", url: "https://github.com/acme/payments-api", createdAt: ago(2 * day)),
+            LinkItem(title: "Linear", url: "https://linear.app/acme/team/PAY/active", createdAt: ago(2 * day)),
+            LinkItem(title: "Vercel", url: "https://vercel.com/acme/web-dashboard", createdAt: ago(day)),
+            LinkItem(title: "Figma", url: "https://www.figma.com/file/8sKq2Dd7wQ0/Onboarding", createdAt: ago(day)),
+            LinkItem(title: "Sentry", url: "https://acme.sentry.io/issues/", createdAt: ago(5 * hour)),
+            LinkItem(title: "Notion", url: "https://www.notion.so/acme/Team-Wiki", createdAt: ago(3 * day))
+        ])
+        let folders = [
+            work,
+            LinkFolder(name: "Docs", colorName: "purple", symbol: "book", links: [
+                LinkItem(title: "Swift Language Guide", url: "https://docs.swift.org/swift-book/"),
+                LinkItem(title: "SwiftUI", url: "https://developer.apple.com/documentation/swiftui"),
+                LinkItem(title: "MDN Web Docs", url: "https://developer.mozilla.org/"),
+                LinkItem(title: "PostgreSQL manual", url: "https://www.postgresql.org/docs/17/")
+            ]),
+            LinkFolder(name: "Design", colorName: "orange", symbol: "globe", links: [
+                LinkItem(title: "Dribbble", url: "https://dribbble.com/"),
+                LinkItem(title: "Refactoring UI", url: "https://www.refactoringui.com/"),
+                LinkItem(title: "Heroicons", url: "https://heroicons.com/")
+            ]),
+            LinkFolder(name: "Learning", colorName: "green", symbol: "graduationcap", links: [
+                LinkItem(title: "Advent of Code", url: "https://adventofcode.com/"),
+                LinkItem(title: "Exercism Swift", url: "https://exercism.org/tracks/swift"),
+                LinkItem(title: "Rust by Example", url: "https://doc.rust-lang.org/rust-by-example/")
+            ]),
+            LinkFolder(name: "Reading", colorName: "teal", symbol: "star", links: [
+                LinkItem(title: "Simon Willison's weblog", url: "https://simonwillison.net/"),
+                LinkItem(title: "Paul Graham essays", url: "https://paulgraham.com/articles.html"),
+                LinkItem(title: "Hacker News", url: "https://news.ycombinator.com/")
+            ])
+        ]
+        try JSONFileStore<LinksDocument>(url: paths.linksFile).save(LinksDocument(folders: folders))
+
+        let clips = [
+            ClipboardItem(
+                text: "ssh -i ~/.ssh/id_work deploy@staging.example.com",
+                copiedAt: ago(2 * day), isPinned: true
+            ),
+            ClipboardItem(
+                text: "Alex Morgan\nStaff Engineer, Acme\nalex@example.com",
+                copiedAt: ago(4 * day), isPinned: true
+            ),
+            ClipboardItem(text: "https://github.com/acme/payments-api/pull/214", copiedAt: ago(12 * minute)),
+            ClipboardItem(
+                text: "func charge(_ amount: Int, key: String) async throws -> Charge {\n    try await gateway.create(amount: amount, idempotencyKey: key)\n}",
+                copiedAt: ago(40 * minute)
+            ),
+            ClipboardItem(text: "#1F6FEB", copiedAt: ago(2 * hour)),
+            ClipboardItem(text: "git rebase -i HEAD~3", copiedAt: ago(5 * hour)),
+            ClipboardItem(text: "Remember to rotate the staging API key before Friday.", copiedAt: ago(day)),
+            ClipboardItem(text: "SELECT id, status FROM charges WHERE idempotency_key = $1;", copiedAt: ago(day + 4 * hour)),
+            ClipboardItem(text: "~/Documents/workspaces/payments-api/.env.example", copiedAt: ago(2 * day)),
+            ClipboardItem(text: "Thanks for the quick turnaround, I will review the draft tonight.", copiedAt: ago(3 * day))
+        ]
+        try JSONFileStore<ClipboardDocument>(url: paths.clipboardFile).save(ClipboardDocument(items: clips))
+        return work.id
+    }
+
+    static func install(in environment: AppEnvironment, workFolderID: UUID, now: Date = Date()) -> DemoData {
         let featured = installTasks(in: environment.tasks)
         let promptID = installNotes(in: environment.notes)
         let sessionID = installAgents(in: environment.agents, now: now)
         installAgenda(in: environment.agenda, now: now)
         installSystem(in: environment.system)
-        return DemoData(featuredTaskID: featured, promptNoteID: promptID, featuredSessionID: sessionID)
+        installDevicesAndPorts(peripherals: environment.peripherals, ports: environment.ports)
+        installUsage(in: environment.usage, now: now)
+        let paymentsRoot = installGit(in: environment.git, now: now)
+        return DemoData(
+            featuredTaskID: featured,
+            promptNoteID: promptID,
+            featuredSessionID: sessionID,
+            workFolderID: workFolderID,
+            paymentsRepoRoot: paymentsRoot
+        )
+    }
+
+    private static func installDevicesAndPorts(peripherals: PeripheralsViewModel, ports: PortsViewModel) {
+        let gigabyte: UInt64 = 1_000_000_000
+        let devices = [
+            PeripheralDevice(name: "Magic Keyboard", kind: .keyboard, level: 82),
+            PeripheralDevice(name: "MX Master 3S", kind: .mouse, level: 47),
+            PeripheralDevice(name: "AirPods Pro", kind: .headphones, leftLevel: 90, rightLevel: 85, caseLevel: 60)
+        ]
+        let volumes = [
+            MountedVolume(
+                url: URL(fileURLWithPath: "/"), name: "Macintosh HD", formatName: "APFS",
+                totalBytes: 994 * gigabyte, availableBytes: 412 * gigabyte, isRoot: true
+            ),
+            MountedVolume(
+                url: URL(fileURLWithPath: "/Volumes/SanDisk 64GB"), name: "SanDisk 64GB", formatName: "exFAT",
+                totalBytes: 64 * gigabyte, availableBytes: 21 * gigabyte,
+                isRemovable: true, isEjectable: true, isInternal: false
+            )
+        ]
+        peripherals.applyPreview(devices: devices, volumes: volumes)
+
+        let user = NSUserName()
+        let uid = getuid()
+        let listening = [
+            ListeningPort(pid: 41_207, command: "node", user: user, userID: uid, port: 3000, address: "*", isLoopbackOnly: false),
+            ListeningPort(pid: 41_233, command: "node", user: user, userID: uid, port: 5173, address: "127.0.0.1", isLoopbackOnly: true),
+            ListeningPort(pid: 812, command: "postgres", user: user, userID: uid, port: 5432, address: "127.0.0.1", isLoopbackOnly: true),
+            ListeningPort(pid: 690, command: "redis-server", user: user, userID: uid, port: 6379, address: "127.0.0.1", isLoopbackOnly: true),
+            ListeningPort(pid: 41_290, command: "node", user: user, userID: uid, port: 9229, address: "127.0.0.1", isLoopbackOnly: true)
+        ]
+        ports.applyPreview(ports: listening)
+    }
+
+    /// Seven days of Claude Code usage across three models and four projects. Built through the
+    /// real aggregation, so the totals, costs and bars are computed the same way as in the app.
+    private static func installUsage(in usage: UsageViewModel, now: Date) {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: now)
+        let models = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]
+        let projects = ["payments-api", "web-dashboard", "task-bar", "infra"]
+        // Relative activity per day, oldest first.
+        let activity: [Double] = [0.6, 0.9, 1.4, 1.1, 1.7, 0.5, 1.2]
+        // Opus does most of the work, Sonnet some, Haiku the small jobs.
+        let modelPattern = [0, 0, 1, 0, 2, 0, 1, 0]
+
+        var records: [UsageRecord] = []
+        for (dayIndex, factor) in activity.enumerated() {
+            let day = calendar.date(byAdding: .day, value: dayIndex - 6, to: today) ?? today
+            for slot in 0..<8 {
+                var stamp = calendar.date(byAdding: .hour, value: 9 + slot, to: day) ?? day
+                if stamp > now { stamp = now.addingTimeInterval(-600) }
+                let scale = factor * (1 + 0.15 * Double(slot % 3))
+                records.append(UsageRecord(
+                    messageID: "day\(dayIndex)-\(slot)",
+                    model: models[modelPattern[slot]],
+                    timestamp: stamp,
+                    project: projects[(slot + dayIndex) % projects.count],
+                    sessionID: "session-\(dayIndex)-\((slot + dayIndex) % 4)",
+                    usage: TokenUsage(
+                        input: Int(42_000 * scale),
+                        output: Int(9_000 * scale),
+                        cacheWrite: Int(65_000 * scale),
+                        cacheRead: Int(1_100_000 * scale)
+                    )
+                ))
+            }
+        }
+        usage.applyPreview(UsageReport.make(records: records, period: .week, now: now, calendar: calendar))
+    }
+
+    /// Three repositories: one with changes ahead of its remote, one clean, one behind. The
+    /// payments repository also gets commits, branches and pull requests for the detail scene.
+    /// Returns its root.
+    private static func installGit(in git: GitViewModel, now: Date) -> String {
+        let paymentsRoot = "/Users/dev/work/payments-api"
+        let payments = GitRepoSnapshot(
+            root: paymentsRoot,
+            status: GitRepoStatus(
+                branch: "feature/idempotency",
+                upstream: "origin/feature/idempotency",
+                ahead: 2,
+                stagedCount: 1,
+                modifiedCount: 1,
+                untrackedCount: 1,
+                totalChanges: 3,
+                changes: [
+                    GitChange(path: "Sources/Charges/ChargeService.swift", kind: .added, isStaged: true),
+                    GitChange(path: "Sources/Charges/ChargeController.swift", kind: .modified, isStaged: false),
+                    GitChange(path: "Migrations/0042_idempotency_keys.sql", kind: .untracked, isStaged: false)
+                ]
+            ),
+            commits: [
+                GitCommit(
+                    hash: "4c8e0d1f7a2b9c3e5d6f8a1b2c3d4e5f60718293", shortHash: "4c8e0d1", author: "Ana Lima",
+                    relativeDate: "25 minutes ago", subject: "Return the original charge on retried requests"
+                ),
+                GitCommit(
+                    hash: "7a19b3e2c4d5f60718293a4b5c6d7e8f90a1b2c3", shortHash: "7a19b3e", author: "Ana Lima",
+                    relativeDate: "1 hour ago", subject: "Add idempotency_key column to charges"
+                ),
+                GitCommit(
+                    hash: "e41d0c9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e", shortHash: "e41d0c9", author: "Rafael Souza",
+                    relativeDate: "yesterday", subject: "Extract ChargeService from the checkout controller"
+                ),
+                GitCommit(
+                    hash: "2b7f5a8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6", shortHash: "2b7f5a8", author: "Rafael Souza",
+                    relativeDate: "3 days ago", subject: "Bump the payment gateway SDK to 4.2"
+                )
+            ],
+            branches: [
+                GitBranch(name: "feature/idempotency", relativeDate: "25 minutes ago", ahead: 2),
+                GitBranch(name: "main", relativeDate: "2 days ago")
+            ],
+            pullRequests: [
+                GitPullRequest(
+                    number: 214, title: "Add idempotency keys to the charge endpoint",
+                    headBranch: "feature/idempotency", url: "https://github.com/acme/payments-api/pull/214",
+                    isDraft: false, authorLogin: "ana-lima", reviewDecision: .reviewRequired
+                ),
+                GitPullRequest(
+                    number: 211, title: "Retry failed webhook deliveries with backoff",
+                    headBranch: "fix/webhook-retry", url: "https://github.com/acme/payments-api/pull/211",
+                    isDraft: true, authorLogin: "dev-kim"
+                )
+            ]
+        )
+        let dashboard = GitRepoSnapshot(
+            root: "/Users/dev/work/web-dashboard",
+            status: GitRepoStatus(branch: "main", upstream: "origin/main"),
+            commits: [
+                GitCommit(
+                    hash: "f0c3a7d9e8b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5", shortHash: "f0c3a7d", author: "Dev Kim",
+                    relativeDate: "3 hours ago", subject: "Add dark mode to the usage chart"
+                )
+            ]
+        )
+        let infra = GitRepoSnapshot(
+            root: "/Users/dev/work/infra",
+            status: GitRepoStatus(
+                branch: "main",
+                upstream: "origin/main",
+                behind: 1,
+                modifiedCount: 1,
+                totalChanges: 1,
+                changes: [GitChange(path: "terraform/staging/main.tf", kind: .modified, isStaged: false)]
+            )
+        )
+        git.applyPreview(snapshots: [payments, dashboard, infra])
+        return paymentsRoot
     }
 
     private static func installTasks(in tasks: TasksViewModel) -> UUID {

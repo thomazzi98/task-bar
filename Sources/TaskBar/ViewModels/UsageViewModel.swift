@@ -41,6 +41,11 @@ final class UsageViewModel {
         scanner = UsageScanner(paths: paths)
     }
 
+    /// Replaces the shown report. Used only by snapshot rendering, which never starts the scan.
+    func applyPreview(_ report: UsageReport) {
+        self.report = report
+    }
+
     /// Starts or stops the scan. Called from `AppEnvironment` whenever the view's visibility
     /// could have changed.
     func setVisible(_ visible: Bool) {

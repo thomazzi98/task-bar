@@ -33,6 +33,11 @@ final class PortsViewModel {
         PortStopRules.block(for: port, currentUserID: currentUserID, ownPID: ownPID)
     }
 
+    /// Replaces the listed ports. Used only by snapshot rendering, which never starts sampling.
+    func applyPreview(ports: [ListeningPort]) {
+        self.ports = ports
+    }
+
     // MARK: Sampling control
 
     func setVisible(_ visible: Bool) {

@@ -14,6 +14,24 @@ public struct ListeningPort: Identifiable, Equatable, Sendable {
     /// `true` only when every socket on this port is bound to loopback.
     public var isLoopbackOnly: Bool
 
+    public init(
+        pid: Int32,
+        command: String,
+        user: String,
+        userID: UInt32,
+        port: UInt16,
+        address: String,
+        isLoopbackOnly: Bool
+    ) {
+        self.pid = pid
+        self.command = command
+        self.user = user
+        self.userID = userID
+        self.port = port
+        self.address = address
+        self.isLoopbackOnly = isLoopbackOnly
+    }
+
     /// One row per process and port, so an IPv4 and an IPv6 socket of the same server stay together.
     public var id: String { "\(pid):\(port)" }
 
