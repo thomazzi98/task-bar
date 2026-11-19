@@ -72,77 +72,27 @@ public enum PeripheralMerge {
     /// a BLE keyboard reports its battery only over GATT, while `system_profiler` knows it is
     /// a keyboard.
     public static func merge(_ primary: [PeripheralDevice], _ secondary: [PeripheralDevice]) -> [PeripheralDevice] {
-        var knownKinds: [String: PeripheralKind] = [:]
-        for device in primary + secondary where device.kind != .other {
-            knownKinds[device.id] = knownKinds[device.id] ?? device.kind
-        }
-        var byID: [String: PeripheralDevice] = [:]
-        for device in primary + secondary where device.hasBattery {
-            guard let existing = byID[device.id] else {
-                byID[device.id] = device
-                continue
+        var kinds: [String: PeripheralKind] = [:]
+        var best: [String: PeripheralDevice] = [:]
+
+        // Earlier devices win every tie, so `primary` comes first.
+        for device in primary + secondary {
+            if device.kind != .other, kinds[device.id] == nil {
+                kinds[device.id] = device.kind
             }
-            let (best, other) = device.levelCount > existing.levelCount ? (device, existing) : (existing, device)
-            var merged = best
-            if merged.kind == .other { merged.kind = other.kind }
-            byID[device.id] = merged
+            guard device.hasBattery else { continue }
+            if let current = best[device.id], current.levelCount >= device.levelCount { continue }
+            best[device.id] = device
         }
-        for (id, device) in byID where device.kind == .other {
-            byID[id]?.kind = knownKinds[id] ?? .other
-        }
-        return byID.values.sorted { lhs, rhs in
-            lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-        }
-    }
-}
 
-/// Decodes the GATT Battery Level characteristic (0x2A19), a single byte holding the percent.
-public enum BatteryLevelDecoder {
-    /// The first byte as a percent, clamped to 0...100. Empty data gives nil.
-    public static func percent(from data: Data) -> Int? {
-        guard let byte = data.first else { return nil }
-        return min(max(Int(byte), 0), 100)
-    }
-}
-
-/// Reads battery levels out of `system_profiler SPBluetoothDataType -json`.
-public enum PeripheralParser {
-    /// The connected Bluetooth devices, with whatever battery levels they report. Devices
-    /// without a battery are kept so `PeripheralMerge` can learn their kind.
-    public static func bluetoothDevices(profilerJSON data: Data) -> [PeripheralDevice] {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let sections = root["SPBluetoothDataType"] as? [[String: Any]] else {
-            return []
-        }
-        var devices: [PeripheralDevice] = []
-        for section in sections {
-            // Each entry is a single-key dictionary: device name -> properties.
-            for entry in section["device_connected"] as? [[String: Any]] ?? [] {
-                for (name, value) in entry {
-                    guard let properties = value as? [String: Any] else { continue }
-                    let device = PeripheralDevice(
-                        name: name,
-                        kind: PeripheralKind(minorType: properties["device_minorType"] as? String, name: name),
-                        level: percent(properties["device_batteryLevelMain"]) ?? percent(properties["device_batteryLevel"]),
-                        leftLevel: percent(properties["device_batteryLevelLeft"]),
-                        rightLevel: percent(properties["device_batteryLevelRight"]),
-                        caseLevel: percent(properties["device_batteryLevelCase"])
-                    )
-                    devices.append(device)
+        return best.values
+            .map { device in
+                var merged = device
+                if merged.kind == .other, let known = kinds[device.id] {
+                    merged.kind = known
                 }
+                return merged
             }
-        }
-        return devices
-    }
-
-    /// `"85%"` becomes 85, clamped to 0...100. Anything else, such as "Fully charged", gives nil.
-    public static func percent(_ value: Any?) -> Int? {
-        let number: Int?
-        if let text = value as? String {
-            number = Int(text.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespaces))
-        } else {
-            number = value as? Int
-        }
-        return number.map { min(max($0, 0), 100) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 }

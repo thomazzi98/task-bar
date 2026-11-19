@@ -35,7 +35,7 @@ public enum PeripheralProbes {
         return PeripheralDevice(
             name: name,
             kind: PeripheralKind(minorType: nil, name: name),
-            level: min(max(level, 0), 100),
+            level: level.clamped(to: 0...100),
             isCharging: dict["IsCharging"] as? Bool ?? false
         )
     }
@@ -43,28 +43,11 @@ public enum PeripheralProbes {
     /// Connected Bluetooth devices with their battery levels. Takes about a second, so callers must
     /// throttle it. Returns nil when the tool fails or runs longer than `timeout`.
     public static func bluetoothDevices(timeout: TimeInterval) -> [PeripheralDevice]? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/system_profiler")
-        process.arguments = ["SPBluetoothDataType", "-json"]
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            return nil
-        }
-
-        // Ends the tool if it hangs. Its output then closes, which unblocks the read below.
-        let watchdog = DispatchWorkItem {
-            if process.isRunning { process.terminate() }
-        }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: watchdog)
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        watchdog.cancel()
-
-        guard process.terminationStatus == 0 else { return nil }
-        return PeripheralParser.bluetoothDevices(profilerJSON: data)
+        guard let output = try? ProcessRunner.runBlocking(
+            executable: URL(fileURLWithPath: "/usr/sbin/system_profiler"),
+            arguments: ["SPBluetoothDataType", "-json"],
+            timeout: timeout
+        ), !output.timedOut, output.status == 0 else { return nil }
+        return PeripheralParser.bluetoothDevices(profilerJSON: output.standardOutput)
     }
 }

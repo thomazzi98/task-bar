@@ -122,11 +122,27 @@ public enum ProcessMath {
         return totals
     }
 
-    /// Processes that must never be offered for termination from the UI.
+    /// Processes that must never be offered for termination from the UI: PID 1 and below, TaskBar
+    /// itself, other users' processes and core system services. Shared by the process list and the
+    /// Ports tab, so both refuse the same processes.
+    public static func isProtected(
+        pid: Int32,
+        userID: UInt32,
+        name: String,
+        currentUserID: UInt32,
+        ownPID: Int32
+    ) -> Bool {
+        pid <= 1 || pid == ownPID || userID != currentUserID || protectedNames.contains(name)
+    }
+
     public static func isProtected(_ usage: ProcessUsage, currentUserID: UInt32, ownPID: Int32) -> Bool {
-        if usage.pid <= 1 || usage.pid == ownPID { return true }
-        if usage.userID != currentUserID { return true }
-        return protectedNames.contains(usage.name)
+        isProtected(
+            pid: usage.pid,
+            userID: usage.userID,
+            name: usage.name,
+            currentUserID: currentUserID,
+            ownPID: ownPID
+        )
     }
 
     private static let protectedNames: Set<String> = [

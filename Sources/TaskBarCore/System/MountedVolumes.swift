@@ -43,7 +43,7 @@ public struct MountedVolume: Equatable, Identifiable, Sendable {
     public var isExternal: Bool { isRemovable || isEjectable || !isInternal || !isLocal }
 
     public var usedFraction: Double {
-        totalBytes == 0 ? 0 : min(max(1 - Double(availableBytes) / Double(totalBytes), 0), 1)
+        totalBytes == 0 ? 0 : (1 - Double(availableBytes) / Double(totalBytes)).clamped(to: 0...1)
     }
 }
 
@@ -68,6 +68,8 @@ public enum VolumeArrangement {
 
 /// Reads the mounted volumes from the file system.
 public enum VolumeProbe {
+    /// The mounted volumes that report a capacity, in the order the system lists them. Hidden
+    /// volumes are skipped; volumes that cannot be read are dropped rather than failing the read.
     public static func mounted() -> [MountedVolume] {
         let keys: [URLResourceKey] = [
             .volumeNameKey,
@@ -85,9 +87,10 @@ public enum VolumeProbe {
             includingResourceValuesForKeys: keys,
             options: [.skipHiddenVolumes]
         ) ?? []
+        let keySet = Set(keys)
 
         return urls.compactMap { url in
-            guard let values = try? url.resourceValues(forKeys: Set(keys)),
+            guard let values = try? url.resourceValues(forKeys: keySet),
                   let total = values.volumeTotalCapacity, total > 0 else {
                 return nil
             }

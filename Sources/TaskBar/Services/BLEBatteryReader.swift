@@ -130,8 +130,7 @@ final class BLEBatteryReader: NSObject {
 
     private func discoverBatteryLevel(_ id: UUID, failed: Bool) {
         guard let peripheral = pending[id]?.peripheral else { return }
-        guard !failed,
-              let service = peripheral.services?.first(where: { $0.uuid == batteryServiceID }) else {
+        guard !failed, let service = batteryService(of: peripheral) else {
             complete(id, level: nil)
             return
         }
@@ -141,13 +140,17 @@ final class BLEBatteryReader: NSObject {
     private func readBatteryLevel(_ id: UUID, failed: Bool) {
         guard let peripheral = pending[id]?.peripheral else { return }
         guard !failed,
-              let characteristic = peripheral.services?
-                .first(where: { $0.uuid == batteryServiceID })?
+              let characteristic = batteryService(of: peripheral)?
                 .characteristics?.first(where: { $0.uuid == batteryLevelID }) else {
             complete(id, level: nil)
             return
         }
         peripheral.readValue(for: characteristic)
+    }
+
+    /// The standard Battery Service among the services discovered so far, if any.
+    private func batteryService(of peripheral: CBPeripheral) -> CBService? {
+        peripheral.services?.first { $0.uuid == batteryServiceID }
     }
 
     private func received(_ id: UUID, value: Data?, failed: Bool) {
