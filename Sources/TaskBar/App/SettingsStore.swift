@@ -61,6 +61,7 @@ final class SettingsStore {
         static let dictationLocale = "dictationLocale"
         static let polisherPreference = "polisherPreference"
         static let showsStoppedContainers = "showsStoppedContainers"
+        static let keepsClipboardHistory = "keepsClipboardHistory"
         static let lastTab = "lastTab"
     }
 
@@ -106,6 +107,11 @@ final class SettingsStore {
         didSet { defaults.set(showsStoppedContainers, forKey: Key.showsStoppedContainers) }
     }
 
+    /// Whether copied text is recorded in the clipboard history. Off stops the monitor at once.
+    var keepsClipboardHistory: Bool {
+        didSet { defaults.set(keepsClipboardHistory, forKey: Key.keepsClipboardHistory) }
+    }
+
     var lastTab: AppTab {
         didSet { defaults.set(lastTab.rawValue, forKey: Key.lastTab) }
     }
@@ -122,6 +128,7 @@ final class SettingsStore {
         polisherPreference = defaults.string(forKey: Key.polisherPreference)
             .flatMap(PolisherPreference.init(rawValue:)) ?? .automatic
         showsStoppedContainers = defaults.bool(forKey: Key.showsStoppedContainers)
+        keepsClipboardHistory = defaults.object(forKey: Key.keepsClipboardHistory) as? Bool ?? true
         lastTab = defaults.string(forKey: Key.lastTab).flatMap(AppTab.init(rawValue:)) ?? .tasks
     }
 

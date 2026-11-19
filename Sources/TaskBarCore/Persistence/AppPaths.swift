@@ -43,6 +43,7 @@ public struct AppPaths: Sendable, Equatable {
 
     public var tasksFile: URL { supportDirectory.appendingPathComponent("tasks.json") }
     public var notesFile: URL { supportDirectory.appendingPathComponent("notes.json") }
+    public var clipboardFile: URL { supportDirectory.appendingPathComponent("clipboard.json") }
 
     /// Spool directory the Claude Code hook script drops event files into.
     public var hookEventsDirectory: URL {
