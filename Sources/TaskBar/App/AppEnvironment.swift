@@ -15,6 +15,7 @@ final class AppEnvironment {
     let agents: AgentsViewModel
     let agenda: AgendaViewModel
     let system = SystemViewModel()
+    let ports = PortsViewModel()
     let assistant: TextAssistant
 
     private let defaults: UserDefaults
@@ -43,6 +44,7 @@ final class AppEnvironment {
             .environment(agents)
             .environment(agenda)
             .environment(system)
+            .environment(ports)
             .environment(assistant)
             .environment(\.appActions, actions)
             // View-level preferences (`@AppStorage`) share the injected store too.
@@ -103,6 +105,7 @@ final class AppEnvironment {
         system.showsStoppedContainers = settings.showsStoppedContainers
         system.setPanelVisible(isVisible)
         system.setDetailVisible(showsTab && tab == .system)
+        ports.setVisible(showsTab && tab == .system)
         agents.setVisible(showsTab && tab == .agents)
         agenda.setVisible(isVisible && settings.isEnabled(.calendar))
     }

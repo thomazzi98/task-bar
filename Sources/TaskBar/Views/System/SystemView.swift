@@ -25,6 +25,8 @@ struct SystemView: View {
                     ForEach(system.processes) { process in ProcessRow(process: process) }
                 }
 
+                PortsSection()
+
                 containersSection
             }
             .padding(.vertical, 10)
@@ -247,7 +249,7 @@ private struct StatTile: View {
 
 // MARK: - Sections
 
-private struct CollapsibleSection<Content: View>: View {
+struct CollapsibleSection<Content: View>: View {
     let title: String
     let count: Int?
     @Binding var isExpanded: Bool
