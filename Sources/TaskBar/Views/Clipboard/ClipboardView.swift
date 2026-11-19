@@ -26,17 +26,13 @@ struct ClipboardView: View {
                 .padding(.bottom, 6)
             }
 
-            if let warning = clipboard.storageWarning {
-                NoticeBanner(text: warning) { clipboard.dismissWarning() }
-                    .padding(.horizontal, Design.gutter)
-                    .padding(.bottom, 6)
-            }
+            StorageNotice(warning: clipboard.storageWarning) { clipboard.dismissWarning() }
 
             if clipboard.itemCount == 0 {
                 EmptyStateView(
                     symbol: "doc.on.clipboard",
                     title: "Nothing copied yet",
-                    message: "Text you copy shows up here, ready to copy again. Passwords from password managers are skipped."
+                    message: "Secrets that password managers mark as concealed are never recorded. History is saved on this Mac."
                 )
             } else if items.isEmpty {
                 EmptyStateView(symbol: "magnifyingglass", title: "No matches", message: "Nothing copied matches “\(query)”.")
@@ -184,20 +180,21 @@ private struct ClipboardFooter: View {
     let unpinnedCount: Int
 
     @Environment(ClipboardViewModel.self) private var clipboard
-    @State private var isConfirmingClear = false
-    @State private var disarmTask: Task<Void, Never>?
 
     var body: some View {
         HStack(spacing: 8) {
             Text("\(itemCount) \(itemCount == 1 ? "copy" : "copies")")
             Spacer(minLength: 4)
-            if isConfirmingClear {
-                Text("Remove unpinned copies?")
-                PillButton(title: "Clear", tint: .red, isProminent: true) { clear() }
-                PillButton(title: "Cancel", tint: .secondary) { disarm() }
-            } else if unpinnedCount > 0 {
-                PillButton(title: "Clear", symbol: "trash", tint: .secondary) { arm() }
-                    .help("Remove every copy except the pinned ones")
+            if unpinnedCount > 0 {
+                // The first click arms the button; the second clears. Pinned copies stay.
+                ConfirmButton(
+                    symbol: "trash",
+                    confirmTitle: "Clear",
+                    help: "Remove every copy except the pinned ones",
+                    look: .pill(title: "Clear")
+                ) {
+                    clipboard.clearUnpinned()
+                }
             }
         }
         .font(.system(size: 10.5))
@@ -205,28 +202,5 @@ private struct ClipboardFooter: View {
         .monospacedDigit()
         .padding(.horizontal, Design.gutter)
         .frame(height: 30)
-        .animation(.easeOut(duration: 0.12), value: isConfirmingClear)
-        .onDisappear { disarm() }
-    }
-
-    /// The first click asks for confirmation. It is withdrawn after a few seconds.
-    private func arm() {
-        isConfirmingClear = true
-        disarmTask?.cancel()
-        disarmTask = Task {
-            try? await Task.sleep(for: .seconds(3))
-            guard !Task.isCancelled else { return }
-            isConfirmingClear = false
-        }
-    }
-
-    private func clear() {
-        disarm()
-        clipboard.clearUnpinned()
-    }
-
-    private func disarm() {
-        disarmTask?.cancel()
-        isConfirmingClear = false
     }
 }

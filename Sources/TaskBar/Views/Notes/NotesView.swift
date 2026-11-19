@@ -43,11 +43,7 @@ private struct NotesListView: View {
             .padding(.top, 10)
             .padding(.bottom, 8)
 
-            if let warning = notes.storageWarning {
-                NoticeBanner(text: warning) { notes.dismissWarning() }
-                    .padding(.horizontal, Design.gutter)
-                    .padding(.bottom, 6)
-            }
+            StorageNotice(warning: notes.storageWarning) { notes.dismissWarning() }
 
             let visible = notes.visibleNotes
             if visible.isEmpty {
