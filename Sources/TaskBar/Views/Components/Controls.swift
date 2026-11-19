@@ -128,9 +128,18 @@ struct PillButton: View {
 
 /// A destructive action that must be clicked twice: the first click arms it for a few seconds.
 struct ConfirmButton: View {
+    /// How the button looks before it is armed. Once armed it is always a red pill labelled `confirmTitle`.
+    enum Look: Equatable {
+        /// A bare icon with a tooltip, for rows.
+        case icon
+        /// A labelled pill, for footers.
+        case pill(title: String)
+    }
+
     let symbol: String
     let confirmTitle: String
     var help = ""
+    var look: Look = .icon
     let action: () -> Void
 
     @State private var isArmed = false
@@ -145,7 +154,13 @@ struct ConfirmButton: View {
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
             } else {
-                IconButton(symbol: symbol, help: help, action: arm)
+                switch look {
+                case .icon:
+                    IconButton(symbol: symbol, help: help, action: arm)
+                case .pill(let title):
+                    PillButton(title: title, symbol: symbol, tint: .secondary, action: arm)
+                        .help(help)
+                }
             }
         }
         .animation(.easeOut(duration: 0.12), value: isArmed)
@@ -471,5 +486,41 @@ struct QuickAddField: View {
         onSubmit(trimmed)
         text = ""
         isFocused = true
+    }
+}
+
+/// A confirmation row shown in place of a destructive action, such as deleting a folder.
+struct InlineConfirmBar: View {
+    let message: String
+    let confirmTitle: String
+    let onConfirm: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(message)
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            PillButton(title: "Cancel", tint: .secondary, action: onCancel)
+            PillButton(title: confirmTitle, tint: .red, isProminent: true, action: onConfirm)
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.red.opacity(0.08)))
+    }
+}
+
+/// The storage warning shown at the top of a tab, with a dismiss button. Shows nothing when there is none.
+struct StorageNotice: View {
+    let warning: String?
+    let onDismiss: () -> Void
+
+    var body: some View {
+        if let warning {
+            NoticeBanner(text: warning, onDismiss: onDismiss)
+                .padding(.horizontal, Design.gutter)
+                .padding(.bottom, 6)
+        }
     }
 }

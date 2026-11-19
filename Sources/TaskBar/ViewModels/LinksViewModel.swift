@@ -10,6 +10,8 @@ final class LinksViewModel {
     /// The folder shown in detail, or `nil` on the home grid.
     private(set) var openFolderID: UUID?
     private(set) var storageWarning: String?
+    /// The fields being edited right now. Escape undoes these before it closes the folder.
+    private(set) var edit = LinkEditState()
 
     @ObservationIgnored private let saver: DebouncedSaver<LinksDocument>
 
@@ -31,6 +33,20 @@ final class LinksViewModel {
         openFolderID.flatMap { LinkBoard.folder(withID: $0, in: folders) }
     }
 
+    func isRenaming(_ folderID: UUID) -> Bool {
+        edit.renamingFolderID == folderID
+    }
+
+    func isEditing(_ linkID: UUID) -> Bool {
+        edit.editingLinkID == linkID
+    }
+
+    /// The text in the paste box of the open folder.
+    var pasteDraft: String {
+        get { edit.pasteDraft }
+        set { edit.pasteDraft = newValue }
+    }
+
     // MARK: Navigation
 
     func open(_ id: UUID) {
@@ -38,32 +54,52 @@ final class LinksViewModel {
         openFolderID = id
     }
 
-    /// Returns to the home grid. `false` when already there, so Escape can close the popover.
+    /// Escape: undoes the innermost edit if there is one, otherwise closes the open folder. Returns
+    /// `false` when there was nothing to undo or close, so Escape can close the popover.
+    @discardableResult
+    func stepBack() -> Bool {
+        if edit.cancelInnermost() { return true }
+        return closeFolder()
+    }
+
+    /// Returns to the home grid. `false` when already there.
     @discardableResult
     func closeFolder() -> Bool {
         guard openFolderID != nil else { return false }
         openFolderID = nil
+        edit = LinkEditState()
         return true
     }
 
     // MARK: Folders
 
-    /// Creates a folder with a colour that differs from its neighbours, and opens it.
+    /// Creates a folder in the next colour of the cycle and opens it. The colour cycles with the
+    /// folder count, so each new folder differs from the one before it.
     @discardableResult
-    func createFolder(name: String = "New folder") -> UUID? {
+    func createFolder() -> UUID? {
         let colors = LinkFolder.colorNames
         let color = colors[folders.count % colors.count]
         var created: UUID?
         mutate { folders in
-            created = LinkBoard.addFolder(named: name, colorName: color, to: &folders)
+            created = LinkBoard.addFolder(named: "New folder", colorName: color, to: &folders)
             return created != nil
         }
         if let created { openFolderID = created }
         return created
     }
 
-    func renameFolder(_ id: UUID, to name: String) {
-        mutate { LinkBoard.renameFolder(id, to: name, in: &$0) }
+    /// Starts renaming a folder. The view gives its name field focus.
+    func beginRename(_ folderID: UUID) {
+        edit.renamingFolderID = folderID
+    }
+
+    /// Ends a rename and applies the name. Returns `false` when the name is blank, so the field can
+    /// go back to the folder's name. A folder that is not being renamed is left alone.
+    @discardableResult
+    func commitRename(_ folderID: UUID, to name: String) -> Bool {
+        guard edit.renamingFolderID == folderID else { return true }
+        edit.renamingFolderID = nil
+        return mutate { LinkBoard.renameFolder(folderID, to: name, in: &$0) }
     }
 
     func setColor(_ colorName: String, of id: UUID) {
@@ -75,7 +111,8 @@ final class LinksViewModel {
     }
 
     func deleteFolder(_ id: UUID) {
-        if openFolderID == id { openFolderID = nil }
+        if openFolderID == id { closeFolder() }
+        if edit.renamingFolderID == id { edit.renamingFolderID = nil }
         mutate { LinkBoard.deleteFolder(id, in: &$0) }
     }
 
@@ -91,12 +128,21 @@ final class LinksViewModel {
         mutate { LinkBoard.addLink(from: input, toFolder: id, in: &$0) }
     }
 
+    /// Starts editing a link in place.
+    func beginEditingLink(_ linkID: UUID) {
+        edit.editingLinkID = linkID
+    }
+
+    /// Saves a link's new title and address. The edit ends when the save succeeds.
     @discardableResult
     func updateLink(_ linkID: UUID, inFolder folderID: UUID, title: String, urlText: String) -> Bool {
-        mutate { LinkBoard.updateLink(linkID, inFolder: folderID, title: title, urlText: urlText, in: &$0) }
+        let saved = mutate { LinkBoard.updateLink(linkID, inFolder: folderID, title: title, urlText: urlText, in: &$0) }
+        if saved, edit.editingLinkID == linkID { edit.editingLinkID = nil }
+        return saved
     }
 
     func deleteLink(_ linkID: UUID, inFolder folderID: UUID) {
+        if edit.editingLinkID == linkID { edit.editingLinkID = nil }
         mutate { LinkBoard.deleteLink(linkID, inFolder: folderID, in: &$0) }
     }
 

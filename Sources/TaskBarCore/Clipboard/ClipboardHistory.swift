@@ -58,6 +58,9 @@ public struct ClipboardDocument: Codable, Equatable, Sendable {
 public struct ClipboardHistory: Equatable, Sendable {
     /// Unpinned items kept at most. Pinned items are never evicted.
     public static let unpinnedLimit = 200
+    /// Total UTF-8 bytes of stored text before the oldest unpinned items are evicted. Pinned items
+    /// count towards it but are never evicted.
+    public static let byteLimit = 1_024 * 1_024
 
     /// Ordered by `copiedAt`, newest first.
     public private(set) var items: [ClipboardItem]
@@ -120,7 +123,7 @@ public struct ClipboardHistory: Equatable, Sendable {
     /// Items whose text contains every word of `query`, ignoring case and diacritics. An empty
     /// query returns everything. Results are in `ordered` order.
     public func search(_ query: String) -> [ClipboardItem] {
-        let terms = query.split(whereSeparator: \.isWhitespace).map(String.init)
+        let terms = Search.terms(in: query)
         guard !terms.isEmpty else { return ordered }
         return ordered.filter { Search.matches($0.text, terms) }
     }
@@ -136,12 +139,15 @@ public struct ClipboardHistory: Equatable, Sendable {
         }.map(\.element)
     }
 
-    /// Drops the oldest unpinned items until the limit holds. Relies on `items` being sorted.
+    /// Drops the oldest unpinned items until both limits hold. Relies on `items` being sorted, so
+    /// walking backwards meets the oldest items first.
     private mutating func enforceLimit() {
         var excess = unpinnedCount - Self.unpinnedLimit
+        var bytes = items.reduce(0) { $0 + $1.text.utf8.count }
         var index = items.count - 1
-        while excess > 0, index >= 0 {
+        while index >= 0, excess > 0 || bytes > Self.byteLimit {
             if !items[index].isPinned {
+                bytes -= items[index].text.utf8.count
                 items.remove(at: index)
                 excess -= 1
             }

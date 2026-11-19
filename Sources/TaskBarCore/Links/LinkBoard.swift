@@ -2,8 +2,9 @@ import Foundation
 
 /// Edits to folders and links, as pure functions over a folder list.
 ///
-/// Each mutation returns `false` and leaves the list untouched when its target is missing or
-/// its input is invalid, so callers can tell the user without checking first.
+/// Mutations return `true` when they changed something. When the target is missing or the input is
+/// invalid they return `false` (`addFolder` returns `nil`) and leave the list untouched, so callers
+/// can tell the user without checking first.
 public enum LinkBoard {
     // MARK: Reading
 
@@ -13,17 +14,12 @@ public enum LinkBoard {
 
     // MARK: Folders
 
-    /// Appends a folder. Returns its ID, or `nil` when the name is blank.
+    /// Appends a folder with the default icon. Returns its ID, or `nil` when the name is blank.
     @discardableResult
-    public static func addFolder(
-        named name: String,
-        colorName: String = "blue",
-        symbol: String = "folder",
-        to folders: inout [LinkFolder]
-    ) -> UUID? {
+    public static func addFolder(named name: String, colorName: String = "blue", to folders: inout [LinkFolder]) -> UUID? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let folder = LinkFolder(name: trimmed, colorName: colorName, symbol: symbol)
+        let folder = LinkFolder(name: trimmed, colorName: colorName)
         folders.append(folder)
         return folder.id
     }
