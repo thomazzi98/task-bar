@@ -21,8 +21,6 @@ final class ClipboardMonitor {
         self.onCopy = onCopy
     }
 
-    var isRunning: Bool { timer != nil }
-
     func start() {
         guard timer == nil else { return }
         // Only copies made from now on count. Whatever is already on the pasteboard is old news.
