@@ -358,6 +358,11 @@ TaskBar=dist/TaskBar.app/Contents/MacOS/TaskBar
 $TaskBar --agents                              # the Claude Code sessions TaskBar sees
 $TaskBar --system                              # one reading of CPU, memory, processes, Docker
 $TaskBar --calendar                            # calendar access and upcoming events
+$TaskBar --ports                               # listening TCP ports, their owners and scope
+$TaskBar --drives                              # mounted volumes with free space and flags
+$TaskBar --devices                             # connected peripherals and battery levels
+$TaskBar --usage 7d                            # Claude Code token usage (today, 7d, 30d, all)
+$TaskBar --git /path/to/repo                   # branch, changes, commits, branches, pull requests
 echo "rough notes…" | $TaskBar --polish note   # run "Tidy up" from a pipe
 $TaskBar --transcribe memo.m4a --locale pt-BR  # the dictation engine on an audio file
 ```
