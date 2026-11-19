@@ -98,19 +98,38 @@ enum SnapshotRenderer {
     }
 
     /// Renders the screens that read live data (System, Agents › Usage, Git, Links, Clipboard)
-    /// from this Mac, read-only, to check them without opening the popover. Nothing is saved:
-    /// the user's files are read, never written.
+    /// from this Mac, to check them without opening the popover.
+    ///
+    /// The environment runs on a scratch support folder, so starting it never writes to the
+    /// running app's data, such as the hook spool's PID file that hook events are routed by. The
+    /// user's Links and Clipboard files are copied into the scratch folder so those screens show
+    /// real content. The copies are read from the originals and never written back. The scratch
+    /// folder is deleted before this returns.
     static func renderLive(into directory: URL, settle: Duration = .seconds(12)) async throws -> [URL] {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let live = AppPaths.live()
+        let scratch = FileManager.default.temporaryDirectory
+            .appendingPathComponent("taskbar-live-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        let support = scratch.appendingPathComponent("support", isDirectory: true)
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        for original in [live.linksFile, live.clipboardFile] where FileManager.default.fileExists(atPath: original.path) {
+            try FileManager.default.copyItem(at: original, to: support.appendingPathComponent(original.lastPathComponent))
+        }
+        let paths = AppPaths(supportDirectory: support, claudeDirectory: live.claudeDirectory)
+
         let suiteName = "taskbar.live-snapshots.\(UUID().uuidString)"
         defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
         let defaults = UserDefaults(suiteName: suiteName) ?? .standard
-        let environment = AppEnvironment(paths: .live(), defaults: defaults)
+        let environment = AppEnvironment(paths: paths, defaults: defaults)
         environment.agents.start()
+        defer { environment.agents.stop() }
         environment.appState.isPanelVisible = true
         environment.system.setPanelVisible(true)
 
-        let scenes: [(name: String, tab: AppTab, show: (Bool) -> Void)] = [
+        // Each scene may also switch its screen's background work on and off around the shot.
+        let scenes: [(name: String, tab: AppTab, show: ((Bool) -> Void)?)] = [
             ("live-system", .system, { visible in
                 environment.system.setDetailVisible(visible)
                 environment.peripherals.setVisible(visible)
@@ -121,23 +140,22 @@ enum SnapshotRenderer {
                 environment.usage.setVisible(visible)
             }),
             ("live-git", .git, { environment.git.setVisible($0) }),
-            ("live-links", .links, { _ in }),
-            ("live-clipboard", .clipboard, { _ in })
+            ("live-links", .links, nil),
+            ("live-clipboard", .clipboard, nil)
         ]
 
         var written: [URL] = []
         for scene in scenes {
             environment.appState.select(scene.tab)
-            scene.show(true)
+            scene.show?(true)
             // Sleeping, not spinning the run loop, lets the view models' main-actor tasks run.
             try await Task.sleep(for: settle)
             let image = try render(environment.rootView(), appearance: .aqua)
-            scene.show(false)
+            scene.show?(false)
             let url = directory.appendingPathComponent("\(scene.name).png")
             try write(image, to: url)
             written.append(url)
         }
-        environment.agents.stop()
         return written
     }
 
