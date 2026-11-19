@@ -13,6 +13,7 @@ final class AppEnvironment {
     let tasks: TasksViewModel
     let notes: NotesViewModel
     let agents: AgentsViewModel
+    let usage: UsageViewModel
     let agenda: AgendaViewModel
     let system = SystemViewModel()
     let assistant: TextAssistant
@@ -29,6 +30,7 @@ final class AppEnvironment {
         tasks = TasksViewModel(store: JSONFileStore(url: paths.tasksFile))
         notes = NotesViewModel(store: JSONFileStore(url: paths.notesFile))
         agents = AgentsViewModel(paths: paths)
+        usage = UsageViewModel(paths: paths)
         agenda = AgendaViewModel(service: CalendarService(), notifier: notifier, settings: settings)
         assistant = TextAssistant(settings: settings, appState: appState)
     }
@@ -41,6 +43,7 @@ final class AppEnvironment {
             .environment(tasks)
             .environment(notes)
             .environment(agents)
+            .environment(usage)
             .environment(agenda)
             .environment(system)
             .environment(assistant)
@@ -104,6 +107,7 @@ final class AppEnvironment {
         system.setPanelVisible(isVisible)
         system.setDetailVisible(showsTab && tab == .system)
         agents.setVisible(showsTab && tab == .agents)
+        usage.setVisible(showsTab && tab == .agents && usage.section == .usage)
         agenda.setVisible(isVisible && settings.isEnabled(.calendar))
     }
 
@@ -113,6 +117,7 @@ final class AppEnvironment {
             _ = appState.selectedTab
             _ = appState.isShowingSettings
             _ = appState.isSearching
+            _ = usage.section
             _ = settings.disabledTabs
             _ = settings.showsStoppedContainers
         } onChange: { [weak self] in
