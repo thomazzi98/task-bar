@@ -8,6 +8,7 @@ struct LinkFolderView: View {
     @Environment(LinksViewModel.self) private var links
     @State private var name: String
     @State private var isConfirmingDelete = false
+    @FocusState private var nameFocused: Bool
 
     init(folder: LinkFolder) {
         self.folder = folder
@@ -16,7 +17,7 @@ struct LinkFolderView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            BackBar(title: "Links", onBack: { links.closeFolder() }) {
+            BackBar(title: "Links", onBack: { commitName(); links.closeFolder() }) {
                 folderMenu
             }
 
@@ -27,18 +28,25 @@ struct LinkFolderView: View {
                 TextField("Folder name", text: $name)
                     .textFieldStyle(.plain)
                     .font(.system(size: 15, weight: .semibold))
-                    .onChange(of: name) { _, newValue in
-                        links.renameFolder(folder.id, to: newValue)
+                    .focused($nameFocused)
+                    .onSubmit {
+                        commitName()
+                        nameFocused = false
+                    }
+                    .onChange(of: nameFocused) { _, focused in
+                        if focused { links.beginRename(folder.id) } else { commitName() }
+                    }
+                    .onChange(of: links.edit.renamingFolderID) { _, renamingID in
+                        // A cancelled rename (Escape) ends here: show the saved name and leave the field.
+                        guard renamingID == nil else { return }
+                        name = savedName
+                        nameFocused = false
                     }
             }
             .padding(.horizontal, Design.gutter)
             .padding(.bottom, 8)
 
-            if let warning = links.storageWarning {
-                NoticeBanner(text: warning) { links.dismissWarning() }
-                    .padding(.horizontal, Design.gutter)
-                    .padding(.bottom, 6)
-            }
+            StorageNotice(warning: links.storageWarning) { links.dismissWarning() }
 
             if isConfirmingDelete {
                 InlineConfirmBar(
@@ -75,6 +83,20 @@ struct LinkFolderView: View {
                 .environment(\.defaultMinListRowHeight, 26)
             }
         }
+        // A name typed but not yet committed is saved when the folder goes away.
+        .onDisappear { commitName() }
+    }
+
+    /// The folder's name as the model has it, which is what a rejected or cancelled edit returns to.
+    private var savedName: String {
+        LinkBoard.folder(withID: folder.id, in: links.folders)?.name ?? folder.name
+    }
+
+    /// Ends the rename. A blank name is rejected and the field goes back to the saved name.
+    private func commitName() {
+        if !links.commitRename(folder.id, to: name) {
+            name = savedName
+        }
     }
 
     private var folderMenu: some View {
@@ -89,200 +111,5 @@ struct LinkFolderView: View {
                 .frame(width: 26, height: 24)
         }
         .plainMenu()
-    }
-}
-
-/// The box at the top of a folder. Return adds the pasted link; the title comes from its host.
-private struct LinkPasteField: View {
-    let folderID: UUID
-
-    @Environment(LinksViewModel.self) private var links
-    @Environment(AppState.self) private var appState
-    @State private var text = ""
-    @State private var error: String?
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 7) {
-                Image(systemName: "link")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(isFocused ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary))
-                TextField("Paste a link…", text: $text)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .focused($isFocused)
-                    .onSubmit(submit)
-                    .onChange(of: text) { _, _ in error = nil }
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(isFocused ? 0.07 : 0.045))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Color.accentColor.opacity(isFocused ? 0.45 : 0), lineWidth: 1)
-            )
-
-            if let error {
-                Text(error)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.red)
-                    .padding(.leading, 2)
-            }
-        }
-        .onChange(of: appState.focusRequest, initial: true) {
-            if appState.isPanelVisible { isFocused = true }
-        }
-    }
-
-    private func submit() {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        if links.addLink(trimmed, toFolder: folderID) {
-            text = ""
-            isFocused = true
-        } else {
-            error = "That doesn’t look like a link."
-        }
-    }
-}
-
-/// One link in a folder. A click opens it; hover reveals Copy and Delete; Edit changes it in place.
-private struct LinkRow: View {
-    let link: LinkItem
-    let folderID: UUID
-    let tint: Color
-
-    @Environment(LinksViewModel.self) private var links
-    @Environment(AppState.self) private var appState
-    @State private var isHovered = false
-    @State private var isEditing = false
-    @State private var draftTitle = ""
-    @State private var draftURL = ""
-    @State private var editError: String?
-    @FocusState private var titleFocused: Bool
-
-    var body: some View {
-        Group {
-            if isEditing {
-                editor
-            } else {
-                content
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .hoverHighlight()
-        .onHover { isHovered = $0 }
-        .onTapGesture {
-            guard !isEditing, let url = link.destination else { return }
-            Opener.open(url)
-        }
-        .contextMenu {
-            Button("Edit") { startEditing() }
-            Button("Copy URL") { copyURL() }
-            Divider()
-            Button("Delete", role: .destructive) { links.deleteLink(link.id, inFolder: folderID) }
-        }
-        .listRowInsets(EdgeInsets(top: 1, leading: 6, bottom: 1, trailing: 6))
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-    }
-
-    private var content: some View {
-        HStack(spacing: 9) {
-            avatar
-            VStack(alignment: .leading, spacing: 1) {
-                Text(link.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(1)
-                Text(host)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 4)
-            if isHovered {
-                IconButton(symbol: "doc.on.doc", help: "Copy URL") { copyURL() }
-                ConfirmButton(symbol: "trash", confirmTitle: "Delete", help: "Delete link") {
-                    links.deleteLink(link.id, inFolder: folderID)
-                }
-            }
-        }
-    }
-
-    private var editor: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            TextField("Title", text: $draftTitle)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13, weight: .medium))
-                .focused($titleFocused)
-                .onSubmit(commitEdit)
-            TextField("Address", text: $draftURL)
-                .textFieldStyle(.plain)
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-                .onSubmit(commitEdit)
-            if let editError {
-                Text(editError)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.red)
-            }
-        }
-        .onExitCommand(perform: cancelEditing)
-    }
-
-    private var avatar: some View {
-        ZStack {
-            Circle().fill(tint.opacity(0.16))
-            if let letter = link.title.first(where: \.isLetter) {
-                Text(String(letter).uppercased())
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(tint)
-            } else {
-                Image(systemName: "link")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(tint)
-            }
-        }
-        .frame(width: 22, height: 22)
-    }
-
-    private var host: String {
-        link.destination.flatMap(LinkURL.displayHost(of:)) ?? link.url
-    }
-
-    private func startEditing() {
-        draftTitle = link.title
-        draftURL = link.url
-        editError = nil
-        isEditing = true
-        titleFocused = true
-    }
-
-    private func commitEdit() {
-        if links.updateLink(link.id, inFolder: folderID, title: draftTitle, urlText: draftURL) {
-            isEditing = false
-            editError = nil
-        } else {
-            editError = "That doesn’t look like a link."
-        }
-    }
-
-    private func cancelEditing() {
-        isEditing = false
-        editError = nil
-    }
-
-    private func copyURL() {
-        Opener.copyToPasteboard(link.url)
-        appState.showToast("Link copied")
     }
 }
