@@ -12,6 +12,7 @@ final class AppEnvironment {
     let appState = AppState()
     let tasks: TasksViewModel
     let notes: NotesViewModel
+    let links: LinksViewModel
     let agents: AgentsViewModel
     let agenda: AgendaViewModel
     let system = SystemViewModel()
@@ -28,6 +29,7 @@ final class AppEnvironment {
         settings = SettingsStore(defaults: defaults)
         tasks = TasksViewModel(store: JSONFileStore(url: paths.tasksFile))
         notes = NotesViewModel(store: JSONFileStore(url: paths.notesFile))
+        links = LinksViewModel(store: JSONFileStore(url: paths.linksFile))
         agents = AgentsViewModel(paths: paths)
         agenda = AgendaViewModel(service: CalendarService(), notifier: notifier, settings: settings)
         assistant = TextAssistant(settings: settings, appState: appState)
@@ -40,6 +42,7 @@ final class AppEnvironment {
             .environment(settings)
             .environment(tasks)
             .environment(notes)
+            .environment(links)
             .environment(agents)
             .environment(agenda)
             .environment(system)
@@ -78,6 +81,7 @@ final class AppEnvironment {
         agents.stop()
         tasks.flush()
         notes.flush()
+        links.flush()
     }
 
     private func panelVisibilityChanged(_ isVisible: Bool) {
@@ -88,6 +92,7 @@ final class AppEnvironment {
         assistant.stopDictation()
         tasks.flush()
         notes.flush()
+        links.flush()
     }
 
     // MARK: Background activity
@@ -216,7 +221,9 @@ final class AppEnvironment {
             guard agents.selectedSessionID != nil else { return false }
             agents.select(nil)
             return true
-        case .links, .clipboard, .git, .calendar, .system:
+        case .links:
+            return links.closeFolder()
+        case .clipboard, .git, .calendar, .system:
             return false
         }
     }
@@ -247,6 +254,9 @@ final class AppEnvironment {
     private func createNewItem() {
         if appState.selectedTab == .notes, !appState.isShowingSettings, !appState.isSearching {
             notes.createNote()
+        } else if appState.selectedTab == .links, !appState.isShowingSettings, !appState.isSearching {
+            // Inside a folder, ⌘N focuses the paste box; on the home grid it makes a new folder.
+            if links.openFolderID == nil { links.createFolder() }
         } else {
             appState.select(.tasks)
         }
