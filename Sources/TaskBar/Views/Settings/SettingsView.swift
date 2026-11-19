@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(AgentsViewModel.self) private var agents
     @Environment(AgendaViewModel.self) private var agenda
+    @Environment(ClipboardViewModel.self) private var clipboard
     @Environment(AppState.self) private var appState
     @Environment(\.appActions) private var actions
 
@@ -117,6 +118,18 @@ struct SettingsView: View {
 
                     SettingsSection("System") {
                         ToggleRow("Show stopped Docker containers", isOn: $settings.showsStoppedContainers)
+                    }
+
+                    SettingsSection("Clipboard") {
+                        ToggleRow("Keep clipboard history", isOn: $settings.keepsClipboardHistory)
+                        HStack {
+                            Text("Clear history").font(.system(size: 12.5))
+                            Spacer()
+                            ConfirmButton(symbol: "trash", confirmTitle: "Clear all", help: "Clear all copies, pinned ones included") {
+                                clipboard.clearAll()
+                            }
+                        }
+                        Text("Copied text is kept on this Mac. Passwords from password managers are never saved.").settingsCaption()
                     }
 
                     SettingsSection("Data") {

@@ -16,11 +16,13 @@ final class AppEnvironment {
     let agenda: AgendaViewModel
     let system = SystemViewModel()
     let ports = PortsViewModel()
+    let clipboard: ClipboardViewModel
     let assistant: TextAssistant
 
     private let defaults: UserDefaults
     private let notifier = Notifier()
     private let hotKeys = HotKeyManager()
+    private let clipboardMonitor: ClipboardMonitor
     private var statusItem: StatusItemController?
 
     init(paths: AppPaths = .live(), defaults: UserDefaults = .standard) {
@@ -31,6 +33,9 @@ final class AppEnvironment {
         notes = NotesViewModel(store: JSONFileStore(url: paths.notesFile))
         agents = AgentsViewModel(paths: paths)
         agenda = AgendaViewModel(service: CalendarService(), notifier: notifier, settings: settings)
+        let clipboardModel = ClipboardViewModel(store: JSONFileStore(url: paths.clipboardFile))
+        clipboard = clipboardModel
+        clipboardMonitor = ClipboardMonitor { clipboardModel.capture($0) }
         assistant = TextAssistant(settings: settings, appState: appState)
     }
 
@@ -45,6 +50,7 @@ final class AppEnvironment {
             .environment(agenda)
             .environment(system)
             .environment(ports)
+            .environment(clipboard)
             .environment(assistant)
             .environment(\.appActions, actions)
             // View-level preferences (`@AppStorage`) share the injected store too.
@@ -72,14 +78,40 @@ final class AppEnvironment {
         observeShortcutSettings()
         updateBackgroundActivity()
         observeActivityInputs()
+        updateClipboardMonitoring()
+        observeClipboardSetting()
         Log.app.info("TaskBar \(AppBundle.version, privacy: .public) started, data at \(self.paths.supportDirectory.path, privacy: .public)")
     }
 
     func shutdown() {
         assistant.stopDictation()
         agents.stop()
+        clipboardMonitor.stop()
         tasks.flush()
         notes.flush()
+        clipboard.flush()
+    }
+
+    // MARK: Clipboard history
+
+    /// Runs the pasteboard monitor only while clipboard history is enabled.
+    private func updateClipboardMonitoring() {
+        if settings.keepsClipboardHistory {
+            clipboardMonitor.start()
+        } else {
+            clipboardMonitor.stop()
+        }
+    }
+
+    private func observeClipboardSetting() {
+        withObservationTracking {
+            _ = settings.keepsClipboardHistory
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.updateClipboardMonitoring()
+                self?.observeClipboardSetting()
+            }
+        }
     }
 
     private func panelVisibilityChanged(_ isVisible: Bool) {
