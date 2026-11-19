@@ -216,7 +216,7 @@ final class AppEnvironment {
             guard agents.selectedSessionID != nil else { return false }
             agents.select(nil)
             return true
-        case .calendar, .system:
+        case .links, .clipboard, .git, .calendar, .system:
             return false
         }
     }
@@ -235,7 +235,7 @@ final class AppEnvironment {
         case "w":
             statusItem?.hide()
         default:
-            // ⌘1…⌘5 jump to the nth visible tab.
+            // ⌘1…⌘9 jump to the nth visible tab.
             guard let number = Int(key), number >= 1, number <= settings.enabledTabs.count else { return false }
             let tab = settings.enabledTabs[number - 1]
             appState.select(tab)

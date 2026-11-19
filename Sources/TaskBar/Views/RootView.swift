@@ -62,7 +62,10 @@ struct RootView: View {
             switch activeTab {
             case .tasks: TasksView()
             case .notes: NotesView()
+            case .links: LinksView()
+            case .clipboard: ClipboardView()
             case .agents: AgentsView()
+            case .git: GitView()
             case .calendar: AgendaView()
             case .system: SystemView()
             }
