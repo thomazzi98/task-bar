@@ -31,10 +31,13 @@ public struct SearchResult: Identifiable, Equatable, Sendable {
 
 /// Case- and accent-insensitive search across every task (at any depth) and every note.
 public enum Search {
+    /// The words of a query. Every one of them must match.
+    public static func terms(in query: String) -> [String] {
+        query.split(whereSeparator: \.isWhitespace).map(String.init)
+    }
+
     public static func run(query: String, tasks: [TaskItem], notes: [Note], limit: Int = 40) -> [SearchResult] {
-        let terms = query
-            .split(whereSeparator: \.isWhitespace)
-            .map(String.init)
+        let terms = terms(in: query)
         guard !terms.isEmpty else { return [] }
 
         var titleMatches: [SearchResult] = []

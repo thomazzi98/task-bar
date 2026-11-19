@@ -53,6 +53,44 @@ struct ClipboardTests {
         #expect(history.items.last?.text == "item 5")
     }
 
+    /// A copy just under the per-copy size cap, labelled so tests can tell copies apart.
+    private func largeCopy(_ label: String) -> String {
+        label + "|" + String(repeating: "x", count: 90 * 1_024)
+    }
+
+    /// The labels of the stored copies, newest first.
+    private func labels(_ history: ClipboardHistory) -> [String] {
+        history.items.map { String($0.text.prefix { $0 != "|" }) }
+    }
+
+    @Test func evictsOldestUnpinnedCopiesOnceTheTextBudgetIsExceeded() {
+        var history = ClipboardHistory()
+        // Twelve 90 KB copies are about 1.1 MB. The oldest goes, leaving eleven (about 1.0 MB).
+        for index in 0..<12 {
+            history.insert(largeCopy("copy \(index)"), at: start.addingTimeInterval(Double(index)))
+        }
+        let storedBytes = history.items.reduce(0) { $0 + $1.text.utf8.count }
+        #expect(history.items.count == 11)
+        #expect(labels(history).first == "copy 11")
+        #expect(labels(history).last == "copy 1")
+        #expect(storedBytes <= ClipboardHistory.byteLimit)
+    }
+
+    @Test func pinnedCopiesCountTowardsTheBudgetButAreNeverEvicted() throws {
+        var history = ClipboardHistory()
+        let pinnedResult = history.insert(largeCopy("pinned"), at: start)
+        let pinnedID = try #require(pinnedResult)
+        history.togglePin(pinnedID)
+        for index in 0..<12 {
+            history.insert(largeCopy("copy \(index)"), at: start.addingTimeInterval(Double(index + 1)))
+        }
+        // The pinned copy takes room in the budget, so ten unpinned copies fit beside it.
+        #expect(history.items.count == 11)
+        #expect(labels(history).last == "pinned")
+        #expect(labels(history).first == "copy 11")
+        #expect(history.items.contains { $0.id == pinnedID })
+    }
+
     @Test func pinnedItemsAreNeverEvicted() throws {
         var history = ClipboardHistory()
         let pinnedIDResult = history.insert("keep me", at: start)
