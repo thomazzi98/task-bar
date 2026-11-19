@@ -16,6 +16,7 @@ final class AppEnvironment {
     let agenda: AgendaViewModel
     let system = SystemViewModel()
     let assistant: TextAssistant
+    let git: GitViewModel
 
     private let defaults: UserDefaults
     private let notifier = Notifier()
@@ -31,6 +32,7 @@ final class AppEnvironment {
         agents = AgentsViewModel(paths: paths)
         agenda = AgendaViewModel(service: CalendarService(), notifier: notifier, settings: settings)
         assistant = TextAssistant(settings: settings, appState: appState)
+        git = GitViewModel(paths: paths, agents: agents)
     }
 
     /// The popover's content with every dependency injected.
@@ -44,6 +46,7 @@ final class AppEnvironment {
             .environment(agenda)
             .environment(system)
             .environment(assistant)
+            .environment(git)
             .environment(\.appActions, actions)
             // View-level preferences (`@AppStorage`) share the injected store too.
             .defaultAppStorage(defaults)
@@ -104,6 +107,7 @@ final class AppEnvironment {
         system.setPanelVisible(isVisible)
         system.setDetailVisible(showsTab && tab == .system)
         agents.setVisible(showsTab && tab == .agents)
+        git.setVisible(showsTab && tab == .git)
         agenda.setVisible(isVisible && settings.isEnabled(.calendar))
     }
 
@@ -216,7 +220,9 @@ final class AppEnvironment {
             guard agents.selectedSessionID != nil else { return false }
             agents.select(nil)
             return true
-        case .links, .clipboard, .git, .calendar, .system:
+        case .git:
+            return git.closeDetail()
+        case .links, .clipboard, .calendar, .system:
             return false
         }
     }
