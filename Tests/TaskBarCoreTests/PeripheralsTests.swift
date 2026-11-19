@@ -103,6 +103,15 @@ struct PeripheralsTests {
         #expect(PeripheralParser.percent(42) == 42)
     }
 
+    @Test func decodesGATTBatteryLevel() {
+        #expect(BatteryLevelDecoder.percent(from: Data([87])) == 87)
+        #expect(BatteryLevelDecoder.percent(from: Data([0])) == 0)
+        #expect(BatteryLevelDecoder.percent(from: Data([100])) == 100)
+        #expect(BatteryLevelDecoder.percent(from: Data([250])) == 100)
+        #expect(BatteryLevelDecoder.percent(from: Data([42, 7])) == 42)
+        #expect(BatteryLevelDecoder.percent(from: Data()) == nil)
+    }
+
     @Test func infersKindFromTypeOrName() {
         #expect(PeripheralKind(minorType: "Trackpad", name: "Force Touch") == .trackpad)
         #expect(PeripheralKind(minorType: nil, name: "Magic Trackpad") == .trackpad)

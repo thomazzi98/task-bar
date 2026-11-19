@@ -50,6 +50,8 @@
 	<string>TaskBar uses the microphone to dictate notes. Audio is transcribed on this Mac and never leaves it.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>TaskBar transcribes your dictation on this Mac to turn speech into notes.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+		<string>TaskBar reads the battery level of your connected Bluetooth keyboard, mouse and headphones.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>TaskBar shows your upcoming events in the menu bar. Events are only read, never changed.</string>
 	<key>NSAppleEventsUsageDescription</key>

@@ -87,6 +87,15 @@ public enum PeripheralMerge {
     }
 }
 
+/// Decodes the GATT Battery Level characteristic (0x2A19), a single byte holding the percent.
+public enum BatteryLevelDecoder {
+    /// The first byte as a percent, clamped to 0...100. Empty data gives nil.
+    public static func percent(from data: Data) -> Int? {
+        guard let byte = data.first else { return nil }
+        return min(max(Int(byte), 0), 100)
+    }
+}
+
 /// Reads battery levels out of `system_profiler SPBluetoothDataType -json`.
 public enum PeripheralParser {
     /// The connected Bluetooth devices that report a battery. Other devices are skipped.

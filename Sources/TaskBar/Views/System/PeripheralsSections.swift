@@ -14,6 +14,16 @@ struct DevicesSection: View {
             CollapsibleSection(title: "Devices", count: peripherals.devices.count, isExpanded: $isExpanded) {
                 ForEach(peripherals.devices) { device in DeviceRow(device: device) }
             }
+        } else if peripherals.needsBluetoothAccess {
+            // Only when nothing else would show: explains why keyboard and mouse batteries are missing.
+            CollapsibleSection(title: "Devices", count: nil, isExpanded: $isExpanded) {
+                Text("Allow Bluetooth access in System Settings › Privacy & Security to see keyboard and mouse batteries.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+            }
         }
     }
 }

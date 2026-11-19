@@ -5,7 +5,9 @@ import TaskBarCore
 /// Battery levels of connected peripherals and the mounted drives, shown in the System tab.
 ///
 /// Nothing runs while the tab is hidden. While it is visible, the IORegistry and volumes are read
-/// every 10 seconds and `system_profiler` at most once a minute, always off the main actor.
+/// every 10 seconds, `system_profiler` and the Bluetooth battery service at most once a minute.
+/// `system_profiler` runs off the main actor. The Bluetooth read is event-driven and returns
+/// after a few seconds at most.
 @MainActor
 @Observable
 final class PeripheralsViewModel {
@@ -15,12 +17,18 @@ final class PeripheralsViewModel {
     /// Volumes with an eject in flight.
     private(set) var ejectingVolumeIDs: Set<String> = []
     private(set) var actionMessage: String?
+    /// True when the user has denied Bluetooth access, so keyboard and mouse batteries are unknown.
+    private(set) var needsBluetoothAccess = false
 
     @ObservationIgnored private var isVisible = false
     @ObservationIgnored private var pollTask: Task<Void, Never>?
     @ObservationIgnored private var mountWatchTasks: [Task<Void, Never>] = []
     @ObservationIgnored private var lastBluetoothRead: Date?
     @ObservationIgnored private var bluetoothDevices: [PeripheralDevice] = []
+    @ObservationIgnored private var registryDevices: [PeripheralDevice] = []
+    @ObservationIgnored private var lastBatteryServiceRead: Date?
+    @ObservationIgnored private var batteryServiceDevices: [PeripheralDevice] = []
+    @ObservationIgnored private let batteryReader = BLEBatteryReader()
 
     private static let pollInterval: Duration = .seconds(10)
     private static let bluetoothInterval: TimeInterval = 60
@@ -89,6 +97,8 @@ final class PeripheralsViewModel {
         let now = Date()
         let readsBluetooth = lastBluetoothRead.map { now.timeIntervalSince($0) >= Self.bluetoothInterval } ?? true
         if readsBluetooth { lastBluetoothRead = now }
+        let readsBatteryService = lastBatteryServiceRead.map { now.timeIntervalSince($0) >= Self.bluetoothInterval } ?? true
+        if readsBatteryService { lastBatteryServiceRead = now }
 
         let timeout = Self.bluetoothTimeout
         let reading = await Task.detached(priority: .utility) { () -> Reading in
@@ -102,11 +112,28 @@ final class PeripheralsViewModel {
         // The tab may have been hidden while the reading was in flight.
         guard isVisible else { return }
         if let bluetooth = reading.bluetooth { bluetoothDevices = bluetooth }
-
-        let merged = PeripheralMerge.merge(bluetoothDevices, reading.registry)
-        if merged != devices { devices = merged }
+        registryDevices = reading.registry
+        publishDevices()
         let arranged = VolumeArrangement.arrange(reading.volumes)
         if arranged != volumes { volumes = arranged }
+
+        // Runs on the main actor: the reader is event-driven and only waits on CoreBluetooth callbacks.
+        // Shown after the fast sources, so they do not wait for it.
+        guard readsBatteryService else { return }
+        batteryServiceDevices = await batteryReader.read()
+        guard isVisible else { return }
+        needsBluetoothAccess = batteryReader.state == .unauthorized
+        publishDevices()
+    }
+
+    /// Merges the sources. Each source is first merged with the ones before it, so the more
+    /// detailed reading of a device wins, as in `PeripheralMerge`.
+    private func publishDevices() {
+        let merged = PeripheralMerge.merge(
+            PeripheralMerge.merge(bluetoothDevices, registryDevices),
+            batteryServiceDevices
+        )
+        if merged != devices { devices = merged }
     }
 
     /// The raw results of one background pass.
