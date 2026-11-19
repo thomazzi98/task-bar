@@ -281,7 +281,7 @@ public enum GitHubCLILocator {
         home: URL = FileManager.default.homeDirectoryForCurrentUser,
         fileManager: FileManager = .default
     ) -> URL? {
-        candidates(path: path, home: home).first { fileManager.isExecutableFile(atPath: $0.path) }
+        ExecutableLocator.first(in: candidates(path: path, home: home), fileManager: fileManager)
     }
 
     static func candidates(path: String, home: URL) -> [URL] {
