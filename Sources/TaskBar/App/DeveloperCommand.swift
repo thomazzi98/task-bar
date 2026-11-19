@@ -20,6 +20,11 @@ enum DeveloperCommand {
     case polish(style: PolishStyle, preference: PolisherPreference)
     case transcribe(file: URL, locale: Locale)
     case renderSnapshots(directory: URL)
+    case ports
+    case drives
+    case devices
+    case tokenUsage(period: UsagePeriod)
+    case git(path: String)
 
     static let usage = """
     TaskBar — menu bar productivity app. Run without arguments to start the app.
@@ -37,6 +42,11 @@ enum DeveloperCommand {
       --transcribe <audio-file>        Transcribe an audio file with the dictation engine.
           [--locale <bcp47>]
       --render-snapshots <directory>   Render every screen with sample data to PNG files.
+      --ports                          List the TCP ports that are listening, with their owners.
+      --drives                         List the mounted volumes with their space and flags.
+      --devices                        List connected peripherals and their battery levels.
+      --usage [today|7d|30d|all]      Summarise Claude Code token usage (default 7d).
+      --git <path>                     Summarise the Git repository at that path.
       --help                           Show this message.
     """
 
@@ -81,6 +91,23 @@ enum DeveloperCommand {
         case "--render-snapshots":
             guard let path = value(after: "--render-snapshots") else { return nil }
             self = .renderSnapshots(directory: URL(fileURLWithPath: path, isDirectory: true))
+        case "--ports":
+            self = .ports
+        case "--drives":
+            self = .drives
+        case "--devices":
+            self = .devices
+        case "--usage":
+            let period: UsagePeriod = switch value(after: "--usage") {
+            case "today": .today
+            case "30d": .month
+            case "all": .all
+            default: .week
+            }
+            self = .tokenUsage(period: period)
+        case "--git":
+            guard let path = value(after: "--git") else { return nil }
+            self = .git(path: path)
         default:
             // Unknown flags (macOS passes some of its own) start the app normally.
             return nil
@@ -119,6 +146,16 @@ enum DeveloperCommand {
             case .renderSnapshots(let directory):
                 let files = try SnapshotRenderer.renderAll(into: directory)
                 files.forEach { print($0.path) }
+            case .ports:
+                await printPorts()
+            case .drives:
+                printDrives()
+            case .devices:
+                await printDevices()
+            case .tokenUsage(let period):
+                await printUsage(period: period)
+            case .git(let path):
+                try await printGit(path: path)
             }
             return 0
         } catch {
@@ -239,5 +276,121 @@ enum DeveloperCommand {
             throw DictationError.engineFailure("File transcription needs macOS 26 or later.")
         }
         print(try await AnalyzerPipeline.transcribe(fileAt: file, locale: locale))
+    }
+
+    private func printPorts() async {
+        guard let ports = await ListeningPortScanner.scan() else {
+            print("ports: lsof failed or took too long")
+            return
+        }
+        print("port  service  command  PID  local|all")
+        for port in ports {
+            let service = KnownPorts.service(for: port.port, command: port.command)?.label ?? "-"
+            let scope = port.isLoopbackOnly ? "local" : "all"
+            print(String(format: "%5d  %@  %@  %d  %@", Int(port.port), service, port.command, port.pid, scope))
+        }
+        print("ports: \(ports.count)")
+    }
+
+    private func printDrives() {
+        let volumes = VolumeArrangement.arrange(VolumeProbe.mounted())
+        for volume in volumes {
+            print(volume.name)
+            print("  format:     \(volume.formatName.isEmpty ? "-" : volume.formatName)")
+            print("  space:      \(Formatting.bytes(volume.availableBytes)) free of \(Formatting.bytes(volume.totalBytes))")
+            print("  removable:  \(volume.isRemovable)   ejectable: \(volume.isEjectable)")
+        }
+        print("drives: \(volumes.count)")
+    }
+
+    private func printDevices() async {
+        let registry = PeripheralProbes.registryDevices()
+        let bluetooth = PeripheralProbes.bluetoothDevices(timeout: 10)
+        let merged = PeripheralMerge.merge(bluetooth ?? [], registry)
+        print("registry: \(registry.count)   bluetooth: \(bluetooth.map { "\($0.count)" } ?? "unavailable")")
+        for device in merged {
+            var levels: [String] = []
+            if let level = device.level { levels.append("battery \(level)%") }
+            if let left = device.leftLevel { levels.append("left \(left)%") }
+            if let right = device.rightLevel { levels.append("right \(right)%") }
+            if let caseLevel = device.caseLevel { levels.append("case \(caseLevel)%") }
+            if device.isCharging { levels.append("charging") }
+            print("\(device.name)  [\(device.kind.rawValue)]  \(levels.joined(separator: ", "))")
+        }
+        print("devices: \(merged.count)")
+    }
+
+    private func printUsage(period: UsagePeriod) async {
+        let clock = ContinuousClock()
+        var report: UsageReport?
+        let elapsed = await clock.measure {
+            report = await UsageScanner(paths: AppPaths.live()).report(for: period)
+        }
+        guard let report else { return }
+
+        let totals = report.totals
+        let usage = totals.usage
+        let cost = totals.cost.map { String(format: "$%.2f", $0) } ?? "n/a"
+        let cache = totals.cacheHitRate.map { Formatting.percent($0) } ?? "n/a"
+        print("period:    \(period.title)   messages: \(totals.messages)   bytes read: \(Formatting.bytes(UInt64(report.bytesRead)))")
+        print("tokens:    \(usage.total) (input \(usage.input), output \(usage.output), cache write \(usage.cacheWrite), cache read \(usage.cacheRead))")
+        print("est. cost: \(cost)   cache hit: \(cache)")
+        print("scan took: \(elapsed.formatted(.units(allowed: [.milliseconds])))")
+
+        print("\nby model:")
+        for row in report.byModel {
+            print("  \(row.name)  tokens \(row.usage.total)  messages \(row.messages)  cost \(row.cost.map { String(format: "$%.2f", $0) } ?? "n/a")")
+        }
+        print("\ntop projects:")
+        for row in report.byProject.prefix(5) {
+            print("  \(row.name)  tokens \(row.usage.total)  messages \(row.messages)")
+        }
+        print("\ntop sessions:")
+        for row in report.topSessions.prefix(5) {
+            print("  \(row.sessionID)  \(row.project)  tokens \(row.usage.total)  messages \(row.messages)")
+        }
+    }
+
+    private func printGit(path: String) async throws {
+        let client = GitClient(gitHubCLI: GitHubCLILocator.locate())
+        guard let root = await client.repositoryRoot(containing: path) else {
+            throw NotAGitRepository(path: path)
+        }
+        let snapshot = await client.snapshot(of: root)
+
+        print("repository: \(snapshot.root)")
+        if let status = snapshot.status {
+            print("branch:     \(status.branch ?? "detached")   upstream: \(status.upstream ?? "-")")
+            print("ahead/behind: \(status.ahead)/\(status.behind)")
+            print("changes:    \(status.totalChanges) total, \(status.stagedCount) staged, \(status.modifiedCount) modified, \(status.untrackedCount) untracked, \(status.conflictedCount) conflicted")
+        } else {
+            print("status:     unavailable")
+        }
+
+        print("\nlast commits:")
+        for commit in snapshot.commits.prefix(5) {
+            print("  \(commit.shortHash)  \(commit.relativeDate)  \(commit.author)  \(commit.subject)")
+        }
+
+        print("\nbranches: \(snapshot.branches.count)")
+        for branch in snapshot.branches {
+            let gone = branch.upstreamIsGone ? "  upstream gone" : ""
+            print("  \(branch.name)  ahead \(branch.ahead) behind \(branch.behind)  \(branch.relativeDate)\(gone)")
+        }
+
+        if client.gitHubCLI == nil {
+            print("\npull requests: gh not installed")
+        } else {
+            print("\npull requests: \(snapshot.pullRequests.count)")
+            for pullRequest in snapshot.pullRequests {
+                let draft = pullRequest.isDraft ? "  draft" : ""
+                print("  #\(pullRequest.number)  \(pullRequest.headBranch)  \(pullRequest.title)\(draft)")
+            }
+        }
+    }
+
+    private struct NotAGitRepository: LocalizedError {
+        let path: String
+        var errorDescription: String? { "not inside a git repository: \(path)" }
     }
 }
