@@ -57,7 +57,9 @@ final class UsageViewModel {
     private func restartRefresh() {
         refreshTask?.cancel()
         let period = period
-        refreshTask = Task { [weak self, scanner] in
+        // Utility priority: the scan reads gigabytes of transcripts and must never compete with
+        // the UI. The task stays on the main actor only to publish the result.
+        refreshTask = Task(priority: .utility) { [weak self, scanner] in
             while !Task.isCancelled {
                 let fresh = await scanner.report(for: period)
                 guard !Task.isCancelled else { return }
