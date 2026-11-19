@@ -32,7 +32,8 @@ uninstall: ## Remove the app from /Applications (your data is kept)
 
 screenshots: ## Re-render the README screenshots with sample data
 	scripts/build.sh --skip-tests
-	"$(BINARY)" --render-snapshots docs/screenshots
+	@# English locale so dates and numbers in the README match the UI language.
+	"$(BINARY)" --render-snapshots docs/screenshots -AppleLanguages "(en)" -AppleLocale en_US
 
 icon: ## Regenerate Resources/AppIcon.icns
 	swift scripts/make-icon.swift Resources/AppIcon.icns

@@ -16,6 +16,9 @@ struct SystemView: View {
                 VitalsView(snapshot: system.snapshot, cpuHistory: system.cpuHistory)
                     .padding(.horizontal, Design.gutter)
 
+                DevicesSection()
+                DrivesSection()
+
                 CollapsibleSection(title: "Apps", count: system.apps.count, isExpanded: $isAppsExpanded) {
                     ForEach(system.apps) { app in AppRow(app: app) }
                 }
@@ -24,6 +27,8 @@ struct SystemView: View {
                     processSortPicker
                     ForEach(system.processes) { process in ProcessRow(process: process) }
                 }
+
+                PortsSection()
 
                 containersSection
             }
@@ -56,19 +61,9 @@ struct SystemView: View {
             isExpanded: $isContainersExpanded
         ) {
             if !system.isDockerAvailable {
-                Text("Docker is not running.")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                SectionMessage(text: "Docker is not running.")
             } else if system.containers.isEmpty {
-                Text("No containers.")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                SectionMessage(text: "No containers.")
             } else {
                 ForEach(system.containers) { container in
                     ContainerRow(container: container, usage: system.containerUsage[container.id])
@@ -235,8 +230,10 @@ private struct StatTile: View {
         VStack(alignment: .leading, spacing: 1.5) {
             Label(title, systemImage: symbol).labelStyle(CompactLabelStyle())
                 .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
-            Text(value).font(.system(size: 12, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8)
-            Text(caption).font(.system(size: 10)).foregroundStyle(.tertiary).monospacedDigit().lineLimit(1).minimumScaleFactor(0.8)
+            // Short values sized to fit: a scale factor here truncates them when the panel narrows
+            // for a visible scroll bar.
+            Text(value).font(.system(size: 12, weight: .semibold)).monospacedDigit().lineLimit(1).fixedSize()
+            Text(caption).font(.system(size: 10)).foregroundStyle(.tertiary).monospacedDigit().lineLimit(1)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 7)
@@ -247,7 +244,7 @@ private struct StatTile: View {
 
 // MARK: - Sections
 
-private struct CollapsibleSection<Content: View>: View {
+struct CollapsibleSection<Content: View>: View {
     let title: String
     let count: Int?
     @Binding var isExpanded: Bool
@@ -396,9 +393,7 @@ private struct ContainerRow: View {
                     Text(container.isRunning ? container.status : container.state.capitalized)
                         .lineLimit(1)
                     ForEach(container.publishedPorts.prefix(3), id: \.self) { port in
-                        Button(":\(String(port))") {
-                            if let url = URL(string: "http://localhost:\(port)") { Opener.open(url) }
-                        }
+                        Button(":\(String(port))") { Opener.openLocalhost(port: port) }
                         .buttonStyle(.plain)
                         .foregroundStyle(Color.accentColor)
                         .help("Open http://localhost:\(String(port))")

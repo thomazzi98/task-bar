@@ -43,6 +43,10 @@ public struct AppPaths: Sendable, Equatable {
 
     public var tasksFile: URL { supportDirectory.appendingPathComponent("tasks.json") }
     public var notesFile: URL { supportDirectory.appendingPathComponent("notes.json") }
+    public var clipboardFile: URL { supportDirectory.appendingPathComponent("clipboard.json") }
+    public var linksFile: URL { supportDirectory.appendingPathComponent("links.json") }
+    /// Repositories the user added by hand in the Git tab.
+    public var gitReposFile: URL { supportDirectory.appendingPathComponent("git-repos.json") }
 
     /// Spool directory the Claude Code hook script drops event files into.
     public var hookEventsDirectory: URL {

@@ -7,19 +7,33 @@ import TaskBarCore
 /// app-level behaviour (keyboard shortcuts, Escape handling, lifecycle).
 @MainActor
 final class AppEnvironment {
+    // MARK: Paths and settings
+
     let paths: AppPaths
     let settings: SettingsStore
     let appState = AppState()
+    private let defaults: UserDefaults
+
+    // MARK: Tabs
+
     let tasks: TasksViewModel
     let notes: NotesViewModel
+    let links: LinksViewModel
     let agents: AgentsViewModel
+    let usage: UsageViewModel
     let agenda: AgendaViewModel
     let system = SystemViewModel()
-    let assistant: TextAssistant
+    let ports = PortsViewModel()
+    let clipboard: ClipboardViewModel
+    let peripherals = PeripheralsViewModel()
+    let git: GitViewModel
 
-    private let defaults: UserDefaults
+    // MARK: Services
+
+    let assistant: TextAssistant
     private let notifier = Notifier()
     private let hotKeys = HotKeyManager()
+    private let clipboardMonitor: ClipboardMonitor
     private var statusItem: StatusItemController?
 
     init(paths: AppPaths = .live(), defaults: UserDefaults = .standard) {
@@ -28,9 +42,14 @@ final class AppEnvironment {
         settings = SettingsStore(defaults: defaults)
         tasks = TasksViewModel(store: JSONFileStore(url: paths.tasksFile))
         notes = NotesViewModel(store: JSONFileStore(url: paths.notesFile))
+        links = LinksViewModel(store: JSONFileStore(url: paths.linksFile))
         agents = AgentsViewModel(paths: paths)
+        usage = UsageViewModel(paths: paths)
         agenda = AgendaViewModel(service: CalendarService(), notifier: notifier, settings: settings)
+        clipboard = ClipboardViewModel(store: JSONFileStore(url: paths.clipboardFile))
+        clipboardMonitor = ClipboardMonitor { [clipboard = self.clipboard] in clipboard.capture($0) }
         assistant = TextAssistant(settings: settings, appState: appState)
+        git = GitViewModel(paths: paths, agents: agents)
     }
 
     /// The popover's content with every dependency injected.
@@ -40,10 +59,16 @@ final class AppEnvironment {
             .environment(settings)
             .environment(tasks)
             .environment(notes)
+            .environment(links)
             .environment(agents)
+            .environment(usage)
             .environment(agenda)
             .environment(system)
+            .environment(ports)
+            .environment(clipboard)
+            .environment(peripherals)
             .environment(assistant)
+            .environment(git)
             .environment(\.appActions, actions)
             // View-level preferences (`@AppStorage`) share the injected store too.
             .defaultAppStorage(defaults)
@@ -66,18 +91,67 @@ final class AppEnvironment {
         agents.start()
         agenda.start()
 
-        bindShortcuts()
         observeShortcutSettings()
-        updateBackgroundActivity()
         observeActivityInputs()
+        observeClipboardSetting()
         Log.app.info("TaskBar \(AppBundle.version, privacy: .public) started, data at \(self.paths.supportDirectory.path, privacy: .public)")
     }
 
     func shutdown() {
         assistant.stopDictation()
         agents.stop()
+        clipboardMonitor.stop()
+        flushStores()
+    }
+
+    /// Saves whatever the debounced stores are still holding.
+    private func flushStores() {
         tasks.flush()
         notes.flush()
+        links.flush()
+        clipboard.flush()
+    }
+
+    // MARK: Observation
+
+    /// Applies `apply` now, and again after each change to the values `reads` touches.
+    /// `withObservationTracking` reports only the first change, so the tracking is re-armed each time.
+    private func observe(
+        reads: @escaping @MainActor @Sendable () -> Void,
+        apply: @escaping @MainActor @Sendable () -> Void
+    ) {
+        apply()
+        rearm(reads: reads, apply: apply)
+    }
+
+    private func rearm(
+        reads: @escaping @MainActor @Sendable () -> Void,
+        apply: @escaping @MainActor @Sendable () -> Void
+    ) {
+        withObservationTracking(reads) { [weak self] in
+            Task { @MainActor in
+                apply()
+                self?.rearm(reads: reads, apply: apply)
+            }
+        }
+    }
+
+    // MARK: Clipboard history
+
+    /// Runs the pasteboard monitor only while clipboard history is enabled.
+    private func updateClipboardMonitoring() {
+        if settings.keepsClipboardHistory {
+            clipboardMonitor.start()
+        } else {
+            clipboardMonitor.stop()
+        }
+    }
+
+    private func observeClipboardSetting() {
+        observe(
+            reads: { [settings] in _ = settings.keepsClipboardHistory },
+            apply: { [weak self] in self?.updateClipboardMonitoring() }
+        )
     }
 
     private func panelVisibilityChanged(_ isVisible: Bool) {
@@ -86,8 +160,7 @@ final class AppEnvironment {
         guard !isVisible else { return }
         // Closing is the natural moment to make sure nothing is left unsaved or recording.
         assistant.stopDictation()
-        tasks.flush()
-        notes.flush()
+        flushStores()
     }
 
     // MARK: Background activity
@@ -103,24 +176,27 @@ final class AppEnvironment {
         system.showsStoppedContainers = settings.showsStoppedContainers
         system.setPanelVisible(isVisible)
         system.setDetailVisible(showsTab && tab == .system)
+        ports.setVisible(showsTab && tab == .system)
+        peripherals.setVisible(showsTab && tab == .system)
         agents.setVisible(showsTab && tab == .agents)
+        git.setVisible(showsTab && tab == .git)
+        usage.setVisible(showsTab && tab == .agents && usage.section == .usage)
         agenda.setVisible(isVisible && settings.isEnabled(.calendar))
     }
 
     private func observeActivityInputs() {
-        withObservationTracking {
-            _ = appState.isPanelVisible
-            _ = appState.selectedTab
-            _ = appState.isShowingSettings
-            _ = appState.isSearching
-            _ = settings.disabledTabs
-            _ = settings.showsStoppedContainers
-        } onChange: { [weak self] in
-            Task { @MainActor in
-                self?.updateBackgroundActivity()
-                self?.observeActivityInputs()
-            }
-        }
+        observe(
+            reads: { [appState, usage, settings] in
+                _ = appState.isPanelVisible
+                _ = appState.selectedTab
+                _ = appState.isShowingSettings
+                _ = appState.isSearching
+                _ = usage.section
+                _ = settings.disabledTabs
+                _ = settings.showsStoppedContainers
+            },
+            apply: { [weak self] in self?.updateBackgroundActivity() }
+        )
     }
 
     // MARK: Actions exposed to views
@@ -149,25 +225,23 @@ final class AppEnvironment {
 
     // MARK: Global shortcuts
 
+    /// Registers the shortcuts, and re-registers them whenever the user records new ones.
+    private func observeShortcutSettings() {
+        observe(
+            reads: { [settings] in
+                _ = settings.toggleShortcut
+                _ = settings.voiceShortcut
+            },
+            apply: { [weak self] in self?.bindShortcuts() }
+        )
+    }
+
     private func bindShortcuts() {
         hotKeys.bind(.togglePanel, to: settings.toggleShortcut) { [weak self] in
             self?.statusItem?.toggle()
         }
         hotKeys.bind(.voiceCapture, to: settings.voiceShortcut) { [weak self] in
             self?.startVoiceNote()
-        }
-    }
-
-    /// Re-registers the shortcuts whenever the user records new ones.
-    private func observeShortcutSettings() {
-        withObservationTracking {
-            _ = settings.toggleShortcut
-            _ = settings.voiceShortcut
-        } onChange: { [weak self] in
-            Task { @MainActor in
-                self?.bindShortcuts()
-                self?.observeShortcutSettings()
-            }
         }
     }
 
@@ -216,7 +290,11 @@ final class AppEnvironment {
             guard agents.selectedSessionID != nil else { return false }
             agents.select(nil)
             return true
-        case .calendar, .system:
+        case .links:
+            return links.stepBack()
+        case .git:
+            return git.closeDetail()
+        case .clipboard, .calendar, .system:
             return false
         }
     }
@@ -235,7 +313,7 @@ final class AppEnvironment {
         case "w":
             statusItem?.hide()
         default:
-            // ⌘1…⌘5 jump to the nth visible tab.
+            // ⌘1…⌘9 jump to the nth visible tab.
             guard let number = Int(key), number >= 1, number <= settings.enabledTabs.count else { return false }
             let tab = settings.enabledTabs[number - 1]
             appState.select(tab)
@@ -247,6 +325,9 @@ final class AppEnvironment {
     private func createNewItem() {
         if appState.selectedTab == .notes, !appState.isShowingSettings, !appState.isSearching {
             notes.createNote()
+        } else if appState.selectedTab == .links, !appState.isShowingSettings, !appState.isSearching {
+            // Inside a folder, ⌘N focuses the paste box; on the home grid it makes a new folder.
+            if links.openFolderID == nil { links.createFolder() }
         } else {
             appState.select(.tasks)
         }

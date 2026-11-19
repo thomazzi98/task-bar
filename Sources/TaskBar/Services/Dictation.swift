@@ -29,7 +29,7 @@ enum DictationError: LocalizedError, Equatable {
         case .speechRecognitionDenied:
             "Speech recognition is off. Allow TaskBar in System Settings > Privacy & Security > Speech Recognition."
         case .unsupportedLanguage(let language):
-            "On-device dictation does not support \(language) yet. Pick another language in Settings."
+            "On-device dictation does not support \(language) yet. Pick another language with the language button next to the microphone."
         case .noMicrophone:
             "No microphone was found."
         case .engineFailure(let reason):
@@ -68,6 +68,17 @@ enum Dictation {
     static let commonLocaleIdentifiers = [
         "en-US", "en-GB", "pt-BR", "pt-PT", "es-ES", "es-MX", "fr-FR", "de-DE", "it-IT", "ja-JP", "ko-KR", "zh-CN"
     ]
+
+    /// A language's name in the current locale, such as "Portuguese (Brazil)".
+    static func label(for identifier: String) -> String {
+        Locale.current.localizedString(forIdentifier: identifier) ?? identifier
+    }
+
+    /// Languages the on-device recogniser accepts, as BCP 47 identifiers.
+    /// Read once: the list does not change while the app runs, and views read it while drawing.
+    static let supportedLocaleIdentifiers: [String] = SFSpeechRecognizer.supportedLocales()
+        .map { $0.identifier(.bcp47) }
+        .sorted()
 }
 
 /// Privacy prompts. Kept off the main actor because the system calls back on arbitrary threads.

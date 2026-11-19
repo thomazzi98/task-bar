@@ -73,6 +73,27 @@ dependencies that does no work at all while its popover is closed.
   Calendar works without OAuth setup.
 - **System** — CPU (with per-core bars), memory pressure, disk, battery and network; open apps and
   top processes with one-click quit; Docker containers with start, stop, restart and clickable ports.
+  - **Devices** — battery of connected keyboards, mice, trackpads and headphones (Apple devices,
+    AirPods, and Bluetooth LE devices such as Logitech keyboards through the standard battery service).
+  - **Drives** — every mounted volume, USB sticks included, with free space; click to open it in
+    Finder, one click to eject.
+  - **Ports** — every listening TCP port with its process and PID, the service it most likely is
+    (Vite, Node, PostgreSQL, Redis, MongoDB…), an **Open** button for web servers and a stop button
+    that asks first. Doubles as a quick check of which local databases are up.
+
+### Links, clipboard, Git and usage
+
+<img align="right" width="300" alt="The Git dashboard" src="docs/screenshots/git-light.png">
+
+- **Links** — folders of bookmarks with a color and an icon. Paste a link to add it; one click opens it.
+- **Clipboard** — history of what you copied, searchable, with pins. One click copies an item again.
+  Items that password managers mark as secret are never recorded, and the history can be turned off.
+- **Git** — the repositories of your Claude Code sessions plus any you add: branch, ahead/behind,
+  pending changes, recent commits, branches and, with the GitHub CLI (`gh`), open pull requests.
+- **Usage** (in Agents) — Claude Code tokens, estimated cost at API list prices, cache hit rate, and
+  the breakdown by model, project and session for today, 7 days, 30 days or all time.
+
+<br clear="right">
 
 ## Light by design
 
@@ -87,8 +108,10 @@ How it stays there:
 
 - **Nothing is sampled while the popover is closed.** Agent status arrives through file-system
   events and Claude Code hooks, not polling. CPU, memory, processes and containers are only read
-  while you are looking at them. The one timer that runs while closed is a coalesced pointer check,
-  four times a second, that backs up hover detection until the menu bar's own tracking has fired once.
+  while you are looking at them; the same goes for devices, drives, ports, Git and token usage. Two
+  light timers run while closed: a coalesced pointer check, four times a second, that backs up hover
+  detection until the menu bar's own tracking has fired once, and, while clipboard history is on, a
+  check of the pasteboard's change counter twice a second (the contents are read only when it moves).
 - **Transcripts are read from the tail.** Session logs reach tens of megabytes; TaskBar reads the last
   few hundred kilobytes and re-reads only when a file changes. Scanning four sessions with 28 MB of
   logs takes about 12 ms.
@@ -134,7 +157,7 @@ because the pointer wandered off.
 | --- | --- |
 | <kbd>⌃</kbd><kbd>⌥</kbd><kbd>T</kbd> | Show or hide TaskBar (global, configurable) |
 | <kbd>⌃</kbd><kbd>⌥</kbd><kbd>V</kbd> | New note by voice: opens a note and starts dictating (global, configurable) |
-| <kbd>⌘</kbd><kbd>1</kbd> … <kbd>⌘</kbd><kbd>5</kbd> | Switch tab |
+| <kbd>⌘</kbd><kbd>1</kbd> … <kbd>⌘</kbd><kbd>9</kbd> | Switch tab |
 | <kbd>⌘</kbd><kbd>N</kbd> | New task or note |
 | <kbd>⌘</kbd><kbd>F</kbd> | Search every task, subtask and note |
 | <kbd>⌘</kbd><kbd>P</kbd> | Pin or unpin |
@@ -225,7 +248,7 @@ Any tool that can open a URL can drive TaskBar: Shortcuts, Raycast, Alfred, a sh
 | URL | Effect |
 | --- | --- |
 | `taskbar://toggle`, `taskbar://open`, `taskbar://close` | Show or hide the popover |
-| `taskbar://tab/agents` | Open on a tab: `tasks`, `notes`, `agents`, `calendar`, `system` |
+| `taskbar://tab/agents` | Open on a tab: `tasks`, `notes`, `links`, `clipboard`, `agents`, `git`, `calendar`, `system` |
 | `taskbar://new-task?title=Call%20the%20bank` | Add a task without opening anything |
 | `taskbar://new-note?text=…` | Add a note |
 | `taskbar://new-prompt?text=…` | Add a prompt draft |
@@ -238,10 +261,12 @@ URLs can only show the app or add content. Nothing can be deleted or read throug
 
 ## Privacy and data
 
-Everything stays on your Mac. The single exception is "Tidy up" with the Claude engine, which sends
-the note you asked to rewrite through your own Claude Code login.
+Everything stays on your Mac. The exceptions are "Tidy up" with the Claude engine, which sends the
+note you asked to rewrite through your own Claude Code login, and the Git tab's pull requests, which
+the GitHub CLI fetches with your own `gh` login.
 
-Your data is two human-readable files in `~/Library/Application Support/TaskBar/`:
+Your data is human-readable JSON in `~/Library/Application Support/TaskBar/`: `tasks.json`,
+`notes.json`, `links.json`, `clipboard.json` (the clipboard history) and `git-repos.json`. A task looks like this:
 
 ```jsonc
 // tasks.json
@@ -272,6 +297,7 @@ Permissions are requested only when you first use the feature that needs them:
 | Calendars | Click **Connect Calendar** | Reading upcoming events |
 | Automation | Use **Focus window** on a Terminal or iTerm2 session | Selecting the right tab |
 | Notifications | Turn on alerts in Settings | Agent and event reminders |
+| Bluetooth | Open the System tab | Battery of Bluetooth LE keyboards and mice |
 
 Nothing is requested at launch. Logs contain states and counts only, never the text of your tasks,
 notes or prompts.
@@ -358,8 +384,20 @@ TaskBar=dist/TaskBar.app/Contents/MacOS/TaskBar
 $TaskBar --agents                              # the Claude Code sessions TaskBar sees
 $TaskBar --system                              # one reading of CPU, memory, processes, Docker
 $TaskBar --calendar                            # calendar access and upcoming events
+$TaskBar --ports                               # listening TCP ports, their owners and scope
+$TaskBar --drives                              # mounted volumes with free space and flags
+$TaskBar --devices                             # connected peripherals and battery levels
+$TaskBar --usage 7d                            # Claude Code token usage (today, 7d, 30d, all)
+$TaskBar --git /path/to/repo                   # branch, changes, commits, branches, pull requests
 echo "rough notes…" | $TaskBar --polish note   # run "Tidy up" from a pipe
 $TaskBar --transcribe memo.m4a --locale pt-BR  # the dictation engine on an audio file
+```
+
+To see the live-data screens (System, Usage, Git, Links, Clipboard) rendered from your own Mac, run
+the app through `open`, so macOS asks for Bluetooth on the app's behalf rather than the terminal's:
+
+```sh
+open -W -n dist/TaskBar.app --args --render-live /tmp/taskbar-live
 ```
 
 **A scratch data folder.** Point the app somewhere else to experiment without touching your data:

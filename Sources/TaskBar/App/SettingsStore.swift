@@ -1,6 +1,7 @@
 import Carbon.HIToolbox
 import Foundation
 import Observation
+import TaskBarCore
 
 /// A global keyboard shortcut: a virtual key code plus Carbon modifier flags.
 struct KeyCombo: Codable, Equatable, Sendable {
@@ -61,6 +62,7 @@ final class SettingsStore {
         static let dictationLocale = "dictationLocale"
         static let polisherPreference = "polisherPreference"
         static let showsStoppedContainers = "showsStoppedContainers"
+        static let keepsClipboardHistory = "keepsClipboardHistory"
         static let lastTab = "lastTab"
     }
 
@@ -106,6 +108,11 @@ final class SettingsStore {
         didSet { defaults.set(showsStoppedContainers, forKey: Key.showsStoppedContainers) }
     }
 
+    /// Whether copied text is recorded in the clipboard history. Off stops the monitor at once.
+    var keepsClipboardHistory: Bool {
+        didSet { defaults.set(keepsClipboardHistory, forKey: Key.keepsClipboardHistory) }
+    }
+
     var lastTab: AppTab {
         didSet { defaults.set(lastTab.rawValue, forKey: Key.lastTab) }
     }
@@ -122,6 +129,7 @@ final class SettingsStore {
         polisherPreference = defaults.string(forKey: Key.polisherPreference)
             .flatMap(PolisherPreference.init(rawValue:)) ?? .automatic
         showsStoppedContainers = defaults.bool(forKey: Key.showsStoppedContainers)
+        keepsClipboardHistory = defaults.object(forKey: Key.keepsClipboardHistory) as? Bool ?? true
         lastTab = defaults.string(forKey: Key.lastTab).flatMap(AppTab.init(rawValue:)) ?? .tasks
     }
 
@@ -150,9 +158,17 @@ final class SettingsStore {
         isEnabled(selection) ? selection : enabledTabs.first ?? .tasks
     }
 
-    /// The locale used for dictation.
+    /// The locale used for dictation: the chosen one, else the first preferred language the speech
+    /// engine supports, else the current locale.
     var dictationLocale: Locale {
-        dictationLocaleIdentifier.isEmpty ? .current : Locale(identifier: dictationLocaleIdentifier)
+        if !dictationLocaleIdentifier.isEmpty {
+            return Locale(identifier: dictationLocaleIdentifier)
+        }
+        let resolved = DictationLocaleResolver.resolve(
+            preferred: Locale.preferredLanguages,
+            supported: Dictation.supportedLocaleIdentifiers
+        )
+        return resolved.map { Locale(identifier: $0) } ?? .current
     }
 
     // MARK: Shortcut persistence

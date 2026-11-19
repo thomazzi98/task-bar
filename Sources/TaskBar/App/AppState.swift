@@ -3,7 +3,7 @@ import Observation
 
 /// The sections of the popover.
 enum AppTab: String, CaseIterable, Identifiable, Sendable {
-    case tasks, notes, agents, calendar, system
+    case tasks, notes, links, clipboard, agents, git, calendar, system
 
     var id: String { rawValue }
 
@@ -11,7 +11,10 @@ enum AppTab: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .tasks: "Tasks"
         case .notes: "Notes"
+        case .links: "Links"
+        case .clipboard: "Clipboard"
         case .agents: "Agents"
+        case .git: "Git"
         case .calendar: "Calendar"
         case .system: "System"
         }
@@ -21,7 +24,10 @@ enum AppTab: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .tasks: "checklist"
         case .notes: "note.text"
+        case .links: "bookmark"
+        case .clipboard: "doc.on.clipboard"
         case .agents: "sparkles"
+        case .git: "arrow.triangle.branch"
         case .calendar: "calendar"
         case .system: "gauge.with.dots.needle.50percent"
         }

@@ -112,6 +112,12 @@ enum Opener {
         NSWorkspace.shared.open(url)
     }
 
+    /// Opens a dev server or container port in the browser at `http://localhost:<port>`.
+    static func openLocalhost(port: Int) {
+        guard let url = URL(string: "http://localhost:\(port)") else { return }
+        open(url)
+    }
+
     static func revealInFinder(_ url: URL) {
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         NSWorkspace.shared.activateFileViewerSelecting([url])

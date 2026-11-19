@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(AgentsViewModel.self) private var agents
     @Environment(AgendaViewModel.self) private var agenda
+    @Environment(ClipboardViewModel.self) private var clipboard
     @Environment(AppState.self) private var appState
     @Environment(\.appActions) private var actions
 
@@ -81,7 +82,7 @@ struct SettingsView: View {
                         PickerRow("Dictation language", selection: $settings.dictationLocaleIdentifier) {
                             Text("System language").tag("")
                             ForEach(Dictation.commonLocaleIdentifiers, id: \.self) { identifier in
-                                Text(Locale.current.localizedString(forIdentifier: identifier) ?? identifier).tag(identifier)
+                                Text(Dictation.label(for: identifier)).tag(identifier)
                             }
                         }
                         PickerRow("Tidy up model", selection: $settings.polisherPreference) {
@@ -117,6 +118,19 @@ struct SettingsView: View {
 
                     SettingsSection("System") {
                         ToggleRow("Show stopped Docker containers", isOn: $settings.showsStoppedContainers)
+                    }
+
+                    SettingsSection("Clipboard") {
+                        ToggleRow("Keep clipboard history", isOn: $settings.keepsClipboardHistory)
+                        HStack {
+                            Text("Clear history").font(.system(size: 12.5))
+                            Spacer()
+                            ConfirmButton(symbol: "trash", confirmTitle: "Clear all", help: "Clear all copies, pinned ones included") {
+                                clipboard.clearAll()
+                            }
+                        }
+                        Text("Secrets that password managers mark as concealed are never recorded. History is saved on this Mac.")
+                            .settingsCaption()
                     }
 
                     SettingsSection("Data") {
