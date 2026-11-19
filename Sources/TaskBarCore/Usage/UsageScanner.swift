@@ -9,15 +9,18 @@ import Foundation
 /// modification date are unchanged is not opened at all. A message that Claude Code writes in
 /// several streamed chunks is counted once, using its largest usage.
 public actor UsageScanner {
-    static let chunkSize = 4 << 20
     /// Bytes every usage line contains. Claude Code writes compact JSON, so the assistant type
     /// is matched exactly as written; lines without these bytes cannot produce a record.
     private static let usageMarker = Array(#""usage""#.utf8)
     private static let assistantMarker = Array(#""type":"assistant""#.utf8)
 
     private let projectsDirectory: URL
+    /// The most bytes read per system call. Tests shrink it to make lines straddle chunks.
+    private let chunkSize: Int
     private var files: [String: FileState] = [:]
-    private var messages: [String: StoredMessage] = [:]
+    private var messages: [String: MessageCopies] = [:]
+    /// The refresh in progress. An overlapping call awaits it instead of starting another.
+    private var refreshing: Task<Int, Never>?
 
     private struct FileState: Sendable {
         var size = 0
@@ -25,12 +28,6 @@ public actor UsageScanner {
         /// Byte offset just past the last complete line that was processed.
         var offset = 0
         var messageIDs: Set<String> = []
-    }
-
-    private struct StoredMessage {
-        var record: UsageRecord
-        /// The transcript file the kept copy came from.
-        var source: String
     }
 
     /// A transcript that changed since the last refresh, as the actor saw it before reading.
@@ -53,8 +50,10 @@ public actor UsageScanner {
         var restarted = false
     }
 
-    public init(projectsDirectory: URL) {
+    public init(projectsDirectory: URL, chunkSize: Int = 4 << 20) {
+        precondition(chunkSize > 0, "A chunk must hold at least one byte")
         self.projectsDirectory = projectsDirectory
+        self.chunkSize = chunkSize
     }
 
     public init(paths: AppPaths) {
@@ -62,10 +61,10 @@ public actor UsageScanner {
     }
 
     /// Reads whatever changed on disk, then aggregates everything for the period.
-    public func report(for period: UsagePeriod, now: Date = Date(), calendar: Calendar = .current) -> UsageReport {
-        let bytesRead = refresh()
+    public func report(for period: UsagePeriod, now: Date = Date(), calendar: Calendar = .current) async -> UsageReport {
+        let bytesRead = await refresh()
         return UsageReport.make(
-            records: messages.values.lazy.map(\.record),
+            records: messages.values.lazy.map(\.best),
             period: period,
             now: now,
             calendar: calendar,
@@ -75,8 +74,43 @@ public actor UsageScanner {
 
     // MARK: Private
 
-    /// Brings every transcript up to date and returns how many bytes were read.
-    private func refresh() -> Int {
+    /// Brings every transcript up to date and returns how many bytes were read. Calls that
+    /// arrive while a refresh runs share its result.
+    private func refresh() async -> Int {
+        if let running = refreshing { return await running.value }
+        let task = Task { await self.runRefresh() }
+        refreshing = task
+        let bytesRead = await task.value
+        refreshing = nil
+        return bytesRead
+    }
+
+    private func runRefresh() async -> Int {
+        let (jobs, seen) = listChanges()
+
+        // Reading and inflating the transcripts blocks, so it runs on a detached utility task
+        // and the actor only resumes to apply the results, in listing order.
+        let chunk = chunkSize
+        let results = await Task.detached(priority: .utility) {
+            Self.readAll(jobs, chunkSize: chunk)
+        }.value
+
+        var bytesRead = 0
+        for (job, result) in zip(jobs, results) {
+            bytesRead += result.bytesRead
+            apply(result, to: job)
+        }
+
+        for path in files.keys where !seen.contains(path) {
+            if let state = files.removeValue(forKey: path) {
+                forgetMessages(from: path, ids: state.messageIDs)
+            }
+        }
+        return bytesRead
+    }
+
+    /// The transcripts whose size or modification date changed, and every transcript path found.
+    private func listChanges() -> (jobs: [Job], seen: Set<String>) {
         // Each project folder is listed directly, so its name comes from the folder itself and
         // no path arithmetic against the root is needed (the root and the enumerated paths can
         // differ by firmlinks such as /var and /private/var).
@@ -118,29 +152,7 @@ public actor UsageScanner {
                 ))
             }
         }
-
-        // The transcripts are read in parallel, one file per iteration. This stays synchronous on
-        // purpose: the actor never suspends mid-refresh, so no other call can interleave with it.
-        // The results are applied below in listing order, as a sequential pass would.
-        let jobList = jobs
-        let slots = ResultSlots(count: jobList.count)
-        DispatchQueue.concurrentPerform(iterations: jobList.count) { index in
-            slots.values[index] = Self.read(jobList[index])
-        }
-
-        var bytesRead = 0
-        for (index, job) in jobList.enumerated() {
-            let result = slots.values[index]
-            bytesRead += result.bytesRead
-            apply(result, to: job)
-        }
-
-        for path in files.keys where !seen.contains(path) {
-            if let state = files.removeValue(forKey: path) {
-                forgetMessages(from: path, ids: state.messageIDs)
-            }
-        }
-        return bytesRead
+        return (jobs, seen)
     }
 
     /// Stores what one read produced and records how far the file was read.
@@ -159,9 +171,18 @@ public actor UsageScanner {
         files[job.path] = state
     }
 
+    /// Reads every job in parallel, one file per iteration. Each result lands in its own slot.
+    private static func readAll(_ jobs: [Job], chunkSize: Int) -> [Ingested] {
+        let slots = ResultSlots(count: jobs.count)
+        DispatchQueue.concurrentPerform(iterations: jobs.count) { index in
+            slots.values[index] = read(jobs[index], chunkSize: chunkSize)
+        }
+        return Array(slots.values)
+    }
+
     /// Reads the bytes appended to one transcript since the last refresh. Runs off the actor, so
     /// it touches no actor state.
-    private static func read(_ job: Job) -> Ingested {
+    private static func read(_ job: Job, chunkSize: Int) -> Ingested {
         var result = Ingested()
         var start = job.previous.offset
         if job.size < start {
@@ -174,8 +195,8 @@ public actor UsageScanner {
         defer { try? handle.close() }
         guard (try? handle.seek(toOffset: UInt64(start))) != nil else { return result }
 
-        // One buffer serves every chunk of this file: no allocation per chunk.
-        let buffer = UnsafeMutableRawBufferPointer.allocate(byteCount: chunkSize, alignment: 16)
+        // One buffer serves every chunk of this file, and never outgrows what is left to read.
+        let buffer = UnsafeMutableRawBufferPointer.allocate(byteCount: min(chunkSize, job.size - start), alignment: 16)
         defer { buffer.deallocate() }
 
         let parser = UsageLineParser()
@@ -185,7 +206,7 @@ public actor UsageScanner {
         // copied: complete lines are examined in place inside the chunk.
         var carry: [UInt8] = []
         while true {
-            let count = Darwin.read(handle.fileDescriptor, buffer.baseAddress, chunkSize)
+            let count = Darwin.read(handle.fileDescriptor, buffer.baseAddress, buffer.count)
             if count < 0, errno == EINTR { continue }
             // End of file, or an unreadable file: what was processed before it is kept.
             guard count > 0 else { break }
@@ -256,18 +277,67 @@ public actor UsageScanner {
         }
     }
 
-    /// Keeps one copy per message id: the one with the most tokens, the latest on a tie.
+    /// Records one copy of a message from a transcript, and keeps the copy that counts.
     private func store(_ record: UsageRecord, source: String, state: inout FileState) {
-        if let existing = messages[record.messageID], existing.record.usage.total > record.usage.total {
-            return
+        if var copies = messages[record.messageID] {
+            copies.add(record, source: source)
+            messages[record.messageID] = copies
+        } else {
+            messages[record.messageID] = MessageCopies(record, source: source)
         }
-        messages[record.messageID] = StoredMessage(record: record, source: source)
         state.messageIDs.insert(record.messageID)
     }
 
+    /// Drops the copies a transcript contributed. A message that another transcript also holds
+    /// keeps counting, with the copy that now ranks first.
     private func forgetMessages(from path: String, ids: Set<String>) {
-        for id in ids where messages[id]?.source == path {
-            messages[id] = nil
+        for id in ids {
+            guard var copies = messages[id] else { continue }
+            if copies.remove(source: path) {
+                messages[id] = copies
+            } else {
+                messages[id] = nil
+            }
         }
+    }
+}
+
+/// The copies of one message, one per transcript that holds it, and the copy that counts.
+private struct MessageCopies {
+    private var bySource: [String: UsageRecord]
+    /// The copy with the most tokens; the latest one on a tie.
+    private(set) var best: UsageRecord
+
+    init(_ record: UsageRecord, source: String) {
+        bySource = [source: record]
+        best = record
+    }
+
+    /// Keeps the transcript's copy unless the new one ranks lower. A streamed message is
+    /// written several times in one transcript, and only its largest copy counts there.
+    mutating func add(_ record: UsageRecord, source: String) {
+        if let existing = bySource[source], Self.rank(existing, source) > Self.rank(record, source) {
+            return
+        }
+        bySource[source] = record
+        best = Self.bestCopy(in: bySource) ?? record
+    }
+
+    /// Drops the copy from one transcript. Returns false when no copy is left.
+    mutating func remove(source: String) -> Bool {
+        bySource[source] = nil
+        guard let top = Self.bestCopy(in: bySource) else { return false }
+        best = top
+        return true
+    }
+
+    private static func bestCopy(in copies: [String: UsageRecord]) -> UsageRecord? {
+        copies.max { rank($0.value, $0.key) < rank($1.value, $1.key) }?.value
+    }
+
+    /// Token count, then time, then source: a total order, so the choice never depends on
+    /// dictionary order.
+    private static func rank(_ record: UsageRecord, _ source: String) -> (Int, Date, String) {
+        (record.usage.total, record.timestamp, source)
     }
 }

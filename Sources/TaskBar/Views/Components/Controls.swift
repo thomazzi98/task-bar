@@ -524,3 +524,38 @@ struct StorageNotice: View {
         }
     }
 }
+
+/// A titled group of content: a small uppercase heading, an optional detail beside it, then the
+/// content itself.
+struct SectionBlock<Content: View>: View {
+    let title: String
+    var detail: String?
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 5) {
+                Text(title.uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                if let detail {
+                    Text(detail)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// An icon and text set tighter than the default label.
+struct CompactLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 2.5) {
+            configuration.icon.font(.system(size: 8.5))
+            configuration.title
+        }
+    }
+}

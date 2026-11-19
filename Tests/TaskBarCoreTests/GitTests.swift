@@ -4,7 +4,8 @@ import Testing
 
 @Suite("Git status parsing")
 struct GitStatusParserTests {
-    /// Porcelain v2 output covering every entry type, with the branch headers git prints.
+    /// `git status --porcelain=v2 --branch -z` output covering every entry type: records end in
+    /// NUL, and a rename's original path is a record of its own. Paths hold spaces and quotes.
     private let mixed = [
         "# branch.oid 9fceb02d0ae598e95dc970b74767f19372d61af8",
         "# branch.head feature/login",
@@ -15,11 +16,13 @@ struct GitStatusParserTests {
         "1 MM N... 100644 100644 100644 ccc3333 ddd4444 Package.swift",
         "1 A. N... 000000 100644 100644 0000000 eee5555 Sources/App/New File.swift",
         "1 .D N... 100644 100644 000000 fff6666 0000000 docs/old.md",
-        "2 R. N... 100644 100644 100644 111aaaa 222bbbb R100 Sources/App/Renamed.swift\tSources/App/Original.swift",
+        "2 R. N... 100644 100644 100644 111aaaa 222bbbb R100 Sources/App/Renamed File.swift",
+        "Sources/App/Original File.swift",
         "u UU N... 100644 100644 100644 100644 333cccc 444dddd 555eeee Sources/App/Conflict.swift",
         "? scratch notes.txt",
+        "? say \"hi\".txt",
         "? .env.local"
-    ].joined(separator: "\n") + "\n"
+    ].joined(separator: "\0") + "\0"
 
     @Test func readsBranchUpstreamAndDivergence() {
         let status = GitStatusParser.parse(mixed)
@@ -31,19 +34,19 @@ struct GitStatusParserTests {
 
     @Test func countsEveryEntryKindOnce() {
         let status = GitStatusParser.parse(mixed)
-        #expect(status.totalChanges == 9)
+        #expect(status.totalChanges == 10)
         // README (M.), Package (MM), New File (A.) and Renamed (R.) have something staged.
         #expect(status.stagedCount == 4)
         // Login (.M), Package (MM) and old.md (.D) have an unstaged edit.
         #expect(status.modifiedCount == 3)
-        #expect(status.untrackedCount == 2)
+        #expect(status.untrackedCount == 3)
         #expect(status.conflictedCount == 1)
         #expect(!status.isClean)
     }
 
     @Test func listsPathsWithTheirState() throws {
         let changes = GitStatusParser.parse(mixed).changes
-        #expect(changes.count == 9)
+        #expect(changes.count == 10)
 
         let login = try #require(changes.first { $0.path == "Sources/App/Login.swift" })
         #expect(login.kind == .modified)
@@ -56,9 +59,9 @@ struct GitStatusParserTests {
         let deleted = try #require(changes.first { $0.path == "docs/old.md" })
         #expect(deleted.kind == .deleted)
 
-        let renamed = try #require(changes.first { $0.path == "Sources/App/Renamed.swift" })
+        let renamed = try #require(changes.first { $0.path == "Sources/App/Renamed File.swift" })
         #expect(renamed.kind == .renamed)
-        #expect(renamed.originalPath == "Sources/App/Original.swift")
+        #expect(renamed.originalPath == "Sources/App/Original File.swift")
         #expect(renamed.isStaged)
 
         let conflict = try #require(changes.first { $0.path == "Sources/App/Conflict.swift" })
@@ -66,12 +69,24 @@ struct GitStatusParserTests {
 
         let untracked = try #require(changes.first { $0.path == "scratch notes.txt" })
         #expect(untracked.kind == .untracked)
+
+        // Quotes and spaces arrive exactly as on disk, with no C-style quoting.
+        let quoted = try #require(changes.first { $0.path == #"say "hi".txt"# })
+        #expect(quoted.kind == .untracked)
+    }
+
+    @Test func aRenamesOriginalPathIsNotReadAsAnEntry() {
+        let output = "2 R. N... 100644 100644 100644 111aaaa 222bbbb R100 New.swift\0Old.swift\0? extra.txt\0"
+        let status = GitStatusParser.parse(output)
+        #expect(status.totalChanges == 2)
+        #expect(status.changes.map(\.path) == ["New.swift", "extra.txt"])
+        #expect(status.changes.first?.originalPath == "Old.swift")
     }
 
     @Test func capsTheListButNotTheCounts() {
-        var lines = ["# branch.head main"]
-        lines += (1...25).map { "? untracked-\($0).txt" }
-        let status = GitStatusParser.parse(lines.joined(separator: "\n"), changeLimit: 20)
+        var records = ["# branch.head main"]
+        records += (1...25).map { "? untracked-\($0).txt" }
+        let status = GitStatusParser.parse(records.joined(separator: "\0") + "\0", changeLimit: 20)
         #expect(status.totalChanges == 25)
         #expect(status.untrackedCount == 25)
         #expect(status.changes.count == 20)
@@ -79,11 +94,7 @@ struct GitStatusParserTests {
     }
 
     @Test func readsDetachedHeadWithoutUpstream() {
-        let output = """
-        # branch.oid 9fceb02d0ae598e95dc970b74767f19372d61af8
-        # branch.head (detached)
-
-        """
+        let output = "# branch.oid 9fceb02d0ae598e95dc970b74767f19372d61af8\0# branch.head (detached)\0"
         let status = GitStatusParser.parse(output)
         #expect(status.branch == nil)
         #expect(status.upstream == nil)
@@ -93,13 +104,13 @@ struct GitStatusParserTests {
     }
 
     @Test func treatsAnUnbornBranchAsNoBranch() {
-        let status = GitStatusParser.parse("# branch.oid (initial)\n# branch.head (initial)\n")
+        let status = GitStatusParser.parse("# branch.oid (initial)\0# branch.head (initial)\0")
         #expect(status.branch == nil)
         #expect(status.isClean)
     }
 
     @Test func skipsUnknownLinesWithoutFailing() {
-        let output = "# some.future.header x\nzz nonsense\n1 short\n? ok.txt\n"
+        let output = "# some.future.header x\0zz nonsense\01 short\0? ok.txt\0"
         let status = GitStatusParser.parse(output)
         #expect(status.totalChanges == 1)
         #expect(status.changes.map(\.path) == ["ok.txt"])

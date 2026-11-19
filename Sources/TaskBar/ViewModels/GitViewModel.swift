@@ -26,11 +26,8 @@ final class GitViewModel {
     @ObservationIgnored private let store: JSONFileStore<GitRepoList>
     /// Repositories the user added by hand, in order.
     @ObservationIgnored private var addedRoots: [String]
-    @ObservationIgnored private var pollTask: Task<Void, Never>?
-    @ObservationIgnored private var isListVisible = false
+    @ObservationIgnored private var loop: VisibleRefreshLoop?
     @ObservationIgnored private var needsRefresh = false
-
-    private static let refreshInterval: Duration = .seconds(30)
 
     init(paths: AppPaths, agents: AgentsViewModel) {
         self.agents = agents
@@ -41,24 +38,17 @@ final class GitViewModel {
         if let failure = outcome.failureDescription {
             Log.app.error("reading git-repos.json failed: \(failure, privacy: .public)")
         }
+        // Set last: the loop's action refers to `self`, which must be fully initialized by then.
+        loop = VisibleRefreshLoop(interval: .seconds(30)) { [weak self] in
+            await self?.refresh()
+        }
     }
 
     // MARK: Visibility
 
     /// Starts or stops the refresh loop. Called whenever the Git tab appears or disappears.
     func setVisible(_ visible: Bool) {
-        guard visible != isListVisible else { return }
-        isListVisible = visible
-        pollTask?.cancel()
-        pollTask = nil
-        guard visible else { return }
-
-        pollTask = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.refresh()
-                try? await Task.sleep(for: Self.refreshInterval)
-            }
-        }
+        loop?.setVisible(visible)
     }
 
     /// Replaces the repository snapshots. Used only by snapshot rendering, which never starts
