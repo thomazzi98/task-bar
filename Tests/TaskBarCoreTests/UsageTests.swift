@@ -179,6 +179,17 @@ struct UsageReportTests {
         #expect(messages(.all) == 4)
     }
 
+    @Test func aSessionsProjectDoesNotDependOnArrivalOrderWhenMessagesTie() {
+        let stamp = utc("2026-11-17T10:00:00.000Z")
+        let first = UsageRecord(messageID: "a", model: "claude-sonnet-4-5", timestamp: stamp, project: "web", sessionID: "s", usage: TokenUsage(input: 1, output: 0, cacheWrite: 0, cacheRead: 0))
+        let second = UsageRecord(messageID: "b", model: "claude-sonnet-4-5", timestamp: stamp, project: "api", sessionID: "s", usage: TokenUsage(input: 1, output: 0, cacheWrite: 0, cacheRead: 0))
+
+        let forward = UsageReport.make(records: [first, second], period: .all, now: now, calendar: utcCalendar)
+        let backward = UsageReport.make(records: [second, first], period: .all, now: now, calendar: utcCalendar)
+        #expect(forward == backward)
+        #expect(forward.topSessions.first?.project == "api")
+    }
+
     @Test func totalsAndBreakdownsAreSortedAndPriced() {
         let report = UsageReport.make(records: records(), period: .all, now: now, calendar: utcCalendar)
 
@@ -320,6 +331,48 @@ struct UsageScannerTests {
         #expect(second.totals == first.totals)
     }
 
+    @Test func aTinyChunkSizeGivesTheSameReport() async throws {
+        let tmp = try TemporaryDirectory()
+        defer { tmp.remove() }
+        let projects = tmp.url.appendingPathComponent("projects")
+        try write([
+            assistantLine(message: "m1", input: 10, output: 1, cacheWrite: 100, cacheRead: 1_000),
+            assistantLine(message: "m1", input: 10, output: 5, cacheWrite: 100, cacheRead: 1_000),
+            #"{"type":"assistant","message":{"id":"broken","usage":"#,
+            assistantLine(message: "m3", model: "claude-sonnet-4-5", input: 20, output: 30, cwd: nil, session: nil)
+        ], to: projects.appendingPathComponent(session))
+
+        // Seven bytes per read cuts every line across several chunks.
+        let whole = UsageScanner(projectsDirectory: projects)
+        let tiny = UsageScanner(projectsDirectory: projects, chunkSize: 7)
+        let expected = await whole.report(for: .all, now: now, calendar: utcCalendar)
+        let actual = await tiny.report(for: .all, now: now, calendar: utcCalendar)
+
+        #expect(actual.totals.messages == 2)
+        #expect(actual == expected)
+    }
+
+    @Test func aMessageSurvivesWhenOneOfItsFilesChanges() async throws {
+        let tmp = try TemporaryDirectory()
+        defer { tmp.remove() }
+        let projects = tmp.url.appendingPathComponent("projects")
+        let kept = projects.appendingPathComponent("-Users-me-app/a.jsonl")
+        let other = projects.appendingPathComponent("-Users-me-app/b.jsonl")
+        // Both transcripts hold "shared"; a.jsonl holds the larger copy and so counts.
+        try write([assistantLine(message: "shared", input: 100), assistantLine(message: "only_a", input: 1)], to: kept)
+        try write([assistantLine(message: "shared", input: 10)], to: other)
+
+        let scanner = UsageScanner(projectsDirectory: projects)
+        let before = await scanner.report(for: .all, now: now, calendar: utcCalendar)
+        #expect(before.totals.usage.input == 101)
+
+        // a.jsonl is rewritten without "shared": b.jsonl's copy takes over instead of vanishing.
+        try write([assistantLine(message: "only_a2", input: 1)], to: kept)
+        let after = await scanner.report(for: .all, now: now, calendar: utcCalendar)
+        #expect(after.totals.messages == 2)
+        #expect(after.totals.usage.input == 11)
+    }
+
     @Test func aRewrittenFileIsCountedFromItsNewContent() async throws {
         let tmp = try TemporaryDirectory()
         defer { tmp.remove() }
@@ -359,18 +412,18 @@ struct UsageScannerTests {
 @Suite("Usage formatting")
 struct UsageFormatTests {
     @Test func compactNumbers() {
-        #expect(UsageFormat.compact(987) == "987")
-        #expect(UsageFormat.compact(1_000) == "1K")
-        #expect(UsageFormat.compact(340_000) == "340K")
-        #expect(UsageFormat.compact(1_200_000) == "1.2M")
-        #expect(UsageFormat.compact(12_400_000) == "12M")
-        #expect(UsageFormat.compact(3_400_000_000) == "3.4B")
+        #expect(Formatting.compact(987) == "987")
+        #expect(Formatting.compact(1_000) == "1K")
+        #expect(Formatting.compact(340_000) == "340K")
+        #expect(Formatting.compact(1_200_000) == "1.2M")
+        #expect(Formatting.compact(12_400_000) == "12M")
+        #expect(Formatting.compact(3_400_000_000) == "3.4B")
     }
 
     @Test func money() {
-        #expect(UsageFormat.money(nil) == "—")
-        #expect(UsageFormat.money(1.234) == "US$ 1.23")
-        #expect(UsageFormat.money(0) == "US$ 0.00")
+        #expect(Formatting.money(nil) == "—")
+        #expect(Formatting.money(1.234) == "US$ 1.23")
+        #expect(Formatting.money(0) == "US$ 0.00")
     }
 
     @Test func modelNames() {

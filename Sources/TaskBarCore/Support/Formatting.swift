@@ -30,6 +30,34 @@ public enum Formatting {
         "\(Int((fraction * 100).rounded()))%"
     }
 
+    /// `~/code/app` for a path inside the home folder. Other paths, including `/Users/rafael2/x`
+    /// for home `/Users/rafael`, are returned unchanged.
+    public static func abbreviatingHome(_ path: String, home: String) -> String {
+        guard path == home || path.hasPrefix(home + "/") else { return path }
+        return "~" + path.dropFirst(home.count)
+    }
+
+    /// Token counts such as `1.2M`, `340K`, `987`.
+    public static func compact(_ value: Int) -> String {
+        let number = Double(value)
+        let (scaled, suffix): (Double, String)
+        switch number {
+        case 1_000_000_000...: (scaled, suffix) = (number / 1_000_000_000, "B")
+        case 1_000_000...: (scaled, suffix) = (number / 1_000_000, "M")
+        case 1_000...: (scaled, suffix) = (number / 1_000, "K")
+        default: return String(value)
+        }
+        let text = scaled >= 10 ? String(format: "%.0f", scaled) : String(format: "%.1f", scaled)
+        let trimmed = text.hasSuffix(".0") ? String(text.dropLast(2)) : text
+        return trimmed + suffix
+    }
+
+    /// Estimated US dollars such as `US$ 1.23`, or an em dash when no price is known.
+    public static func money(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(format: "US$ %.2f", value)
+    }
+
     /// Uptime such as `3d 4h` or `5h 12m`.
     public static func uptime(_ interval: TimeInterval) -> String {
         let minutes = max(Int(interval), 0) / 60

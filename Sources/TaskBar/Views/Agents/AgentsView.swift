@@ -2,6 +2,20 @@ import AppKit
 import SwiftUI
 import TaskBarCore
 
+/// What the Agents tab shows: the live session list or Claude Code's token usage.
+enum AgentsSection: String, CaseIterable, Identifiable {
+    case sessions, usage
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .sessions: "Sessions"
+        case .usage: "Usage"
+        }
+    }
+}
+
 /// The Agents tab: every Claude Code session running on this Mac and what it needs.
 struct AgentsView: View {
     @Environment(AgentsViewModel.self) private var agents
@@ -226,16 +240,6 @@ private struct AgentRow: View {
     }
 }
 
-/// An icon and text set tighter than the default label.
-struct CompactLabelStyle: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 2.5) {
-            configuration.icon.font(.system(size: 8.5))
-            configuration.title
-        }
-    }
-}
-
 /// One session in depth: what it is waiting for, the recent conversation, and quick actions.
 private struct AgentDetailView: View {
     let session: AgentSession
@@ -314,8 +318,7 @@ private struct AgentDetailView: View {
     }
 
     private var abbreviatedPath: String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return session.cwd.hasPrefix(home) ? "~" + session.cwd.dropFirst(home.count) : session.cwd
+        Formatting.abbreviatingHome(session.cwd, home: FileManager.default.homeDirectoryForCurrentUser.path)
     }
 
     private var conversation: some View {

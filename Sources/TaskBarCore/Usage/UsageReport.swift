@@ -2,7 +2,10 @@ import Foundation
 
 /// The span of time a usage report covers.
 public enum UsagePeriod: String, CaseIterable, Identifiable, Sendable {
-    case today, week, month, all
+    case today, week, month
+    /// Every record on disk, but the chart still covers only the last 30 days, so it is
+    /// labelled that way. Totals, breakdowns and sessions cover the whole history.
+    case all
 
     public var id: String { rawValue }
 
@@ -15,8 +18,8 @@ public enum UsagePeriod: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// The first instant included, or nil for the whole history. The 7 and 30 day periods
-    /// include today, so they start six and twenty-nine days before it.
+    /// The first instant included, or nil for the whole history (`.all`). The 7 and 30 day
+    /// periods include today, so they start six and twenty-nine days before it.
     public func start(now: Date, calendar: Calendar) -> Date? {
         let day = calendar.startOfDay(for: now)
         switch self {
@@ -194,7 +197,12 @@ public struct UsageReport: Equatable, Sendable {
             if let value {
                 cost = (cost ?? 0) + value
             }
-            if lastActivity.map({ record.timestamp > $0 }) ?? true {
+            // The project of the latest record wins; on a tie, the smaller name, so the result
+            // does not depend on the order records arrive in.
+            let isLatest = lastActivity.map { last in
+                record.timestamp > last || (record.timestamp == last && record.project < project)
+            } ?? true
+            if isLatest {
                 lastActivity = record.timestamp
                 project = record.project
             }

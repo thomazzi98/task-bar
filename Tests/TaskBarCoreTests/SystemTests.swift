@@ -225,4 +225,13 @@ struct FormattingTests {
         #expect(Formatting.uptime(18_720) == "5h 12m")
         #expect(Formatting.uptime(273_600) == "3d 4h")
     }
+
+    @Test func abbreviatesOnlyPathsInsideTheHomeFolder() {
+        let home = "/Users/rafael"
+        #expect(Formatting.abbreviatingHome("/Users/rafael", home: home) == "~")
+        #expect(Formatting.abbreviatingHome("/Users/rafael/code/app", home: home) == "~/code/app")
+        // A sibling folder that only shares the prefix is not inside home.
+        #expect(Formatting.abbreviatingHome("/Users/rafael2/x", home: home) == "/Users/rafael2/x")
+        #expect(Formatting.abbreviatingHome("/Volumes/data", home: home) == "/Volumes/data")
+    }
 }
