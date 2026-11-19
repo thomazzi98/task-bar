@@ -70,9 +70,10 @@ enum Dictation {
     ]
 
     /// Languages the on-device recogniser accepts, as BCP 47 identifiers.
-    static func supportedLocaleIdentifiers() -> [String] {
-        SFSpeechRecognizer.supportedLocales().map { $0.identifier(.bcp47) }.sorted()
-    }
+    /// Read once: the list does not change while the app runs, and views read it while drawing.
+    static let supportedLocaleIdentifiers: [String] = SFSpeechRecognizer.supportedLocales()
+        .map { $0.identifier(.bcp47) }
+        .sorted()
 }
 
 /// Privacy prompts. Kept off the main actor because the system calls back on arbitrary threads.

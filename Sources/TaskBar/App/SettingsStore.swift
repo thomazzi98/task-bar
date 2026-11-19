@@ -159,7 +159,7 @@ final class SettingsStore {
         }
         let resolved = DictationLocaleResolver.resolve(
             preferred: Locale.preferredLanguages,
-            supported: Dictation.supportedLocaleIdentifiers()
+            supported: Dictation.supportedLocaleIdentifiers
         )
         return resolved.map { Locale(identifier: $0) } ?? .current
     }
