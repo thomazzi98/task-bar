@@ -61,6 +61,13 @@ final class GitViewModel {
         }
     }
 
+    /// Replaces the repository snapshots. Used only by snapshot rendering, which never starts
+    /// the refresh loop.
+    func applyPreview(snapshots: [GitRepoSnapshot]) {
+        self.snapshots = snapshots
+        hasLoaded = true
+    }
+
     // MARK: Refreshing
 
     /// Reloads every repository. A request that arrives mid-refresh runs once more afterwards,
