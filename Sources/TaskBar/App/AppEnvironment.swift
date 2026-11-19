@@ -7,9 +7,15 @@ import TaskBarCore
 /// app-level behaviour (keyboard shortcuts, Escape handling, lifecycle).
 @MainActor
 final class AppEnvironment {
+    // MARK: Paths and settings
+
     let paths: AppPaths
     let settings: SettingsStore
     let appState = AppState()
+    private let defaults: UserDefaults
+
+    // MARK: Tabs
+
     let tasks: TasksViewModel
     let notes: NotesViewModel
     let links: LinksViewModel
@@ -20,10 +26,11 @@ final class AppEnvironment {
     let ports = PortsViewModel()
     let clipboard: ClipboardViewModel
     let peripherals = PeripheralsViewModel()
-    let assistant: TextAssistant
     let git: GitViewModel
 
-    private let defaults: UserDefaults
+    // MARK: Services
+
+    let assistant: TextAssistant
     private let notifier = Notifier()
     private let hotKeys = HotKeyManager()
     private let clipboardMonitor: ClipboardMonitor
@@ -39,9 +46,8 @@ final class AppEnvironment {
         agents = AgentsViewModel(paths: paths)
         usage = UsageViewModel(paths: paths)
         agenda = AgendaViewModel(service: CalendarService(), notifier: notifier, settings: settings)
-        let clipboardModel = ClipboardViewModel(store: JSONFileStore(url: paths.clipboardFile))
-        clipboard = clipboardModel
-        clipboardMonitor = ClipboardMonitor { clipboardModel.capture($0) }
+        clipboard = ClipboardViewModel(store: JSONFileStore(url: paths.clipboardFile))
+        clipboardMonitor = ClipboardMonitor { [clipboard = self.clipboard] in clipboard.capture($0) }
         assistant = TextAssistant(settings: settings, appState: appState)
         git = GitViewModel(paths: paths, agents: agents)
     }
@@ -85,11 +91,8 @@ final class AppEnvironment {
         agents.start()
         agenda.start()
 
-        bindShortcuts()
         observeShortcutSettings()
-        updateBackgroundActivity()
         observeActivityInputs()
-        updateClipboardMonitoring()
         observeClipboardSetting()
         Log.app.info("TaskBar \(AppBundle.version, privacy: .public) started, data at \(self.paths.supportDirectory.path, privacy: .public)")
     }
@@ -98,10 +101,39 @@ final class AppEnvironment {
         assistant.stopDictation()
         agents.stop()
         clipboardMonitor.stop()
+        flushStores()
+    }
+
+    /// Saves whatever the debounced stores are still holding.
+    private func flushStores() {
         tasks.flush()
         notes.flush()
-        clipboard.flush()
         links.flush()
+        clipboard.flush()
+    }
+
+    // MARK: Observation
+
+    /// Applies `apply` now, and again after each change to the values `reads` touches.
+    /// `withObservationTracking` reports only the first change, so the tracking is re-armed each time.
+    private func observe(
+        reads: @escaping @MainActor @Sendable () -> Void,
+        apply: @escaping @MainActor @Sendable () -> Void
+    ) {
+        apply()
+        rearm(reads: reads, apply: apply)
+    }
+
+    private func rearm(
+        reads: @escaping @MainActor @Sendable () -> Void,
+        apply: @escaping @MainActor @Sendable () -> Void
+    ) {
+        withObservationTracking(reads) { [weak self] in
+            Task { @MainActor in
+                apply()
+                self?.rearm(reads: reads, apply: apply)
+            }
+        }
     }
 
     // MARK: Clipboard history
@@ -116,14 +148,10 @@ final class AppEnvironment {
     }
 
     private func observeClipboardSetting() {
-        withObservationTracking {
-            _ = settings.keepsClipboardHistory
-        } onChange: { [weak self] in
-            Task { @MainActor in
-                self?.updateClipboardMonitoring()
-                self?.observeClipboardSetting()
-            }
-        }
+        observe(
+            reads: { [settings] in _ = settings.keepsClipboardHistory },
+            apply: { [weak self] in self?.updateClipboardMonitoring() }
+        )
     }
 
     private func panelVisibilityChanged(_ isVisible: Bool) {
@@ -132,9 +160,7 @@ final class AppEnvironment {
         guard !isVisible else { return }
         // Closing is the natural moment to make sure nothing is left unsaved or recording.
         assistant.stopDictation()
-        tasks.flush()
-        notes.flush()
-        links.flush()
+        flushStores()
     }
 
     // MARK: Background activity
@@ -159,20 +185,18 @@ final class AppEnvironment {
     }
 
     private func observeActivityInputs() {
-        withObservationTracking {
-            _ = appState.isPanelVisible
-            _ = appState.selectedTab
-            _ = appState.isShowingSettings
-            _ = appState.isSearching
-            _ = usage.section
-            _ = settings.disabledTabs
-            _ = settings.showsStoppedContainers
-        } onChange: { [weak self] in
-            Task { @MainActor in
-                self?.updateBackgroundActivity()
-                self?.observeActivityInputs()
-            }
-        }
+        observe(
+            reads: { [appState, usage, settings] in
+                _ = appState.isPanelVisible
+                _ = appState.selectedTab
+                _ = appState.isShowingSettings
+                _ = appState.isSearching
+                _ = usage.section
+                _ = settings.disabledTabs
+                _ = settings.showsStoppedContainers
+            },
+            apply: { [weak self] in self?.updateBackgroundActivity() }
+        )
     }
 
     // MARK: Actions exposed to views
@@ -201,25 +225,23 @@ final class AppEnvironment {
 
     // MARK: Global shortcuts
 
+    /// Registers the shortcuts, and re-registers them whenever the user records new ones.
+    private func observeShortcutSettings() {
+        observe(
+            reads: { [settings] in
+                _ = settings.toggleShortcut
+                _ = settings.voiceShortcut
+            },
+            apply: { [weak self] in self?.bindShortcuts() }
+        )
+    }
+
     private func bindShortcuts() {
         hotKeys.bind(.togglePanel, to: settings.toggleShortcut) { [weak self] in
             self?.statusItem?.toggle()
         }
         hotKeys.bind(.voiceCapture, to: settings.voiceShortcut) { [weak self] in
             self?.startVoiceNote()
-        }
-    }
-
-    /// Re-registers the shortcuts whenever the user records new ones.
-    private func observeShortcutSettings() {
-        withObservationTracking {
-            _ = settings.toggleShortcut
-            _ = settings.voiceShortcut
-        } onChange: { [weak self] in
-            Task { @MainActor in
-                self?.bindShortcuts()
-                self?.observeShortcutSettings()
-            }
         }
     }
 
@@ -269,7 +291,7 @@ final class AppEnvironment {
             agents.select(nil)
             return true
         case .links:
-            return links.closeFolder()
+            return links.stepBack()
         case .git:
             return git.closeDetail()
         case .clipboard, .calendar, .system:
