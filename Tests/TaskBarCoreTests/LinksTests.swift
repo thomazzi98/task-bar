@@ -24,6 +24,17 @@ struct LinkURLTests {
         #expect(LinkURL.normalize("localhost:3000")?.absoluteString == "https://localhost:3000")
     }
 
+    @Test func treatsHostAndPortAsAnAddressNotAScheme() {
+        #expect(LinkURL.normalize("example.com:8080")?.absoluteString == "https://example.com:8080")
+        #expect(LinkURL.normalize("example.com:8080/docs")?.absoluteString == "https://example.com:8080/docs")
+    }
+
+    @Test func keepsMailAndPhoneSchemes() {
+        // Without this, a pasted "mailto:" became "https://mailto:…".
+        #expect(LinkURL.normalize("mailto:a@b.com")?.absoluteString == "mailto:a@b.com")
+        #expect(LinkURL.normalize("tel:+5511999999999")?.absoluteString == "tel:+5511999999999")
+    }
+
     @Test func rejectsEmptyAndUnusableInput() {
         #expect(LinkURL.normalize("") == nil)
         #expect(LinkURL.normalize("   ") == nil)
@@ -47,6 +58,35 @@ struct LinkURLTests {
     }
 }
 
+@Suite("Link edits")
+struct LinkEditStateTests {
+    @Test func escapeUndoesTheInnermostEditFirst() {
+        var edit = LinkEditState()
+        edit.pasteDraft = "example.com"
+        edit.editingLinkID = UUID()
+        edit.renamingFolderID = UUID()
+
+        // The results are captured first: a mutating call cannot sit directly inside #expect.
+        let renameCancelled = edit.cancelInnermost()
+        #expect(renameCancelled)
+        #expect(edit.renamingFolderID == nil)
+        #expect(edit.editingLinkID != nil)
+
+        let editCancelled = edit.cancelInnermost()
+        #expect(editCancelled)
+        #expect(edit.editingLinkID == nil)
+        #expect(edit.pasteDraft == "example.com")
+
+        let pasteCleared = edit.cancelInnermost()
+        #expect(pasteCleared)
+        #expect(edit.pasteDraft.isEmpty)
+
+        // Nothing left to undo: Escape falls through to closing the folder.
+        let nothingLeft = edit.cancelInnermost()
+        #expect(!nothingLeft)
+    }
+}
+
 @Suite("Link board")
 struct LinkBoardTests {
     private func makeBoard() -> (folders: [LinkFolder], work: UUID, a: UUID, b: UUID, c: UUID) {
@@ -60,7 +100,7 @@ struct LinkBoardTests {
 
     @Test func addsFoldersAndRejectsBlankNames() {
         var folders: [LinkFolder] = []
-        let id = LinkBoard.addFolder(named: "  Reading ", colorName: "teal", symbol: "book", to: &folders)
+        let id = LinkBoard.addFolder(named: "  Reading ", colorName: "teal", to: &folders)
         #expect(folders.count == 1)
         #expect(folders.first?.id == id)
         #expect(folders.first?.name == "Reading")

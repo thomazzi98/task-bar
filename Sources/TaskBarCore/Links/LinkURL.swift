@@ -31,7 +31,8 @@ public enum LinkURL {
         return url
     }
 
-    /// The title for a new link: its host without a leading `www.`.
+    /// The title for a new link: its host without a leading `www.`. A URL without a host, such as
+    /// `mailto:` or `file:`, is titled by its last path component, or by its whole address.
     public static func defaultTitle(for url: URL) -> String {
         if let host = displayHost(of: url) { return host }
         let name = url.lastPathComponent
@@ -44,8 +45,9 @@ public enum LinkURL {
         return host.lowercased().hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
-    /// `scheme://` at the start of the text, as opposed to a bare host such as `localhost:3000`.
+    /// `scheme:` at the start of the text, such as `https://`, `mailto:` or `tel:`. A colon followed
+    /// by a digit is a port, so `localhost:3000` and `example.com:8080` are hosts, not schemes.
     static func hasScheme(_ text: String) -> Bool {
-        text.range(of: #"^[A-Za-z][A-Za-z0-9+.-]*://"#, options: .regularExpression) != nil
+        text.range(of: #"^[A-Za-z][A-Za-z0-9+.-]*:(?!\d)"#, options: .regularExpression) != nil
     }
 }
