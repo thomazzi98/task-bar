@@ -21,6 +21,7 @@ final class PeripheralsViewModel {
     private(set) var needsBluetoothAccess = false
 
     @ObservationIgnored private var isVisible = false
+    @ObservationIgnored private var isRefreshing = false
     @ObservationIgnored private var pollTask: Task<Void, Never>?
     @ObservationIgnored private var mountWatchTasks: [Task<Void, Never>] = []
     @ObservationIgnored private var lastBluetoothRead: Date?
@@ -72,7 +73,7 @@ final class PeripheralsViewModel {
 
     /// Opens the drive in Finder.
     func open(_ volume: MountedVolume) {
-        NSWorkspace.shared.open(volume.url)
+        Opener.open(volume.url)
     }
 
     /// Unmounts and ejects the drive. The work runs off the main actor, as it can take a while.
@@ -100,7 +101,13 @@ final class PeripheralsViewModel {
 
     // MARK: Sampling
 
+    /// One reading pass. Skipped while the tab is hidden or another pass is still in flight, so a
+    /// mount event and the poll loop never run two passes at once.
     private func refresh() async {
+        guard isVisible, !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+
         let now = Date()
         let readsBluetooth = lastBluetoothRead.map { now.timeIntervalSince($0) >= Self.bluetoothInterval } ?? true
         if readsBluetooth { lastBluetoothRead = now }

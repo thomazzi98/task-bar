@@ -1,4 +1,3 @@
-import Darwin
 import Foundation
 
 /// A TCP port in the LISTEN state, with the process that owns it.
@@ -49,7 +48,6 @@ public struct ListeningPort: Identifiable, Equatable, Sendable {
 public enum ListeningPortParser {
     public static func parse(_ output: String) -> [ListeningPort] {
         var ports: [String: ListeningPort] = [:]
-        var order: [String] = []
 
         var pid: Int32?
         var command = ""
@@ -90,16 +88,13 @@ public enum ListeningPortParser {
                         address: endpoint.address,
                         isLoopbackOnly: endpoint.isLoopback
                     )
-                    order.append(id)
                 }
             default:
                 continue
             }
         }
 
-        return order
-            .compactMap { ports[$0] }
-            .sorted { ($0.port, $0.pid) < ($1.port, $1.pid) }
+        return ports.values.sorted { ($0.port, $0.pid) < ($1.port, $1.pid) }
     }
 
     /// The `address:port` part of an `n` field.
@@ -135,57 +130,54 @@ public enum ListeningPortParser {
     }
 }
 
-/// Runs lsof off the main thread. Kept apart from the parser so the parser stays pure.
+/// Runs lsof and parses its listing.
 public enum ListeningPortScanner {
-    /// Lists the listening TCP ports. Returns `nil` when lsof cannot run or has to be stopped
-    /// for taking longer than `timeout`, so the caller can keep the last good list.
+    /// Lists the listening TCP ports. Returns `nil` when lsof cannot run or is stopped for taking
+    /// longer than `timeout`, so the caller can keep the last good list.
     public static func scan(timeout: TimeInterval = 3) async -> [ListeningPort]? {
-        await Task.detached(priority: .utility) { () -> [ListeningPort]? in
-            guard let output = runLsof(timeout: timeout) else { return nil }
-            return ListeningPortParser.parse(String(decoding: output, as: UTF8.self))
-        }.value
+        guard let output = try? await ProcessRunner.run(
+            executable: URL(fileURLWithPath: "/usr/sbin/lsof"),
+            arguments: ["-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pcnLu"],
+            timeout: timeout
+        ), !output.timedOut else { return nil }
+        // Status 1 only means nothing matched, which parses to an empty list. Any other status failed.
+        guard output.status == 0 || output.status == 1 else { return nil }
+        return ListeningPortParser.parse(String(decoding: output.standardOutput, as: UTF8.self))
     }
+}
 
-    private static func runLsof(timeout: TimeInterval) -> Data? {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        process.arguments = ["-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pcnLu"]
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
+/// The segments of the Ports list.
+public enum PortFilter: String, CaseIterable, Identifiable, Sendable {
+    case all, development, databases
 
-        do {
-            try process.run()
-        } catch {
-            return nil
+    public var id: String { rawValue }
+
+    public func includes(_ service: PortService?) -> Bool {
+        switch self {
+        case .all: true
+        case .development: service?.isDatabase != true
+        case .databases: service?.isDatabase == true
         }
-
-        // Output is drained before waiting, so a long listing cannot fill the pipe and stall.
-        let processID = process.processIdentifier
-        let watchdog = DispatchWorkItem { kill(processID, SIGTERM) }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: watchdog)
-
-        let output = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        watchdog.cancel()
-
-        // Exit status 1 only means nothing matched. A signal means lsof was cut short.
-        return process.terminationReason == .uncaughtSignal ? nil : output
     }
 }
 
 /// Decides which listening processes may be stopped from the System tab.
 public enum PortStopRules {
     public enum Block: Equatable, Sendable {
-        /// PID 1 and below, or TaskBar itself.
+        /// A system process or TaskBar itself, by the shared `ProcessMath.isProtected` rule.
         case protectedProcess
         /// Owned by another login, so the kernel would refuse the signal anyway.
         case ownedByOtherUser(String)
     }
 
     public static func block(for port: ListeningPort, currentUserID: UInt32, ownPID: Int32) -> Block? {
-        if port.pid <= 1 || port.pid == ownPID { return .protectedProcess }
-        if port.userID != currentUserID { return .ownedByOtherUser(port.user) }
-        return nil
+        guard ProcessMath.isProtected(
+            pid: port.pid,
+            userID: port.userID,
+            name: port.command,
+            currentUserID: currentUserID,
+            ownPID: ownPID
+        ) else { return nil }
+        return port.userID != currentUserID ? .ownedByOtherUser(port.user) : .protectedProcess
     }
 }

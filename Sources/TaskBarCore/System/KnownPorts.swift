@@ -56,18 +56,3 @@ public enum KnownPorts {
         return byCommand.first { name.hasPrefix($0.prefix) }?.service
     }
 }
-
-/// The segments of the Ports list.
-public enum PortFilter: String, CaseIterable, Identifiable, Sendable {
-    case all, development, databases
-
-    public var id: String { rawValue }
-
-    public func includes(_ service: PortService?) -> Bool {
-        switch self {
-        case .all: true
-        case .development: service?.isDatabase != true
-        case .databases: service?.isDatabase == true
-        }
-    }
-}

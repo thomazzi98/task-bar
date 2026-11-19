@@ -384,6 +384,21 @@ struct NoticeBanner: View {
     }
 }
 
+/// The dim line that stands in for a list with nothing to show, such as "No drives.".
+struct SectionMessage: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11.5))
+            .foregroundStyle(.tertiary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+    }
+}
+
 /// The bar at the top of a detail screen: a back button plus trailing controls.
 struct BackBar<Trailing: View>: View {
     let title: String

@@ -18,6 +18,8 @@ final class PortsViewModel {
     @ObservationIgnored private var signalledAt: [ListeningPort.ID: ContinuousClock.Instant] = [:]
     @ObservationIgnored private var pollTask: Task<Void, Never>?
     @ObservationIgnored private var isScanning = false
+    /// Set when a refresh was requested during a scan, so that refresh runs once the scan ends.
+    @ObservationIgnored private var needsRefresh = false
     @ObservationIgnored private var isVisible = false
 
     private static let refreshInterval: Duration = .seconds(5)
@@ -86,11 +88,23 @@ final class PortsViewModel {
 
     // MARK: Private
 
+    /// Scans once, or again when a refresh was requested while the scan ran.
     private func refresh() async {
-        guard isVisible, !isScanning else { return }
+        guard isVisible else { return }
+        guard !isScanning else {
+            needsRefresh = true
+            return
+        }
         isScanning = true
         defer { isScanning = false }
 
+        repeat {
+            needsRefresh = false
+            await scan()
+        } while needsRefresh && isVisible
+    }
+
+    private func scan() async {
         // A failed scan keeps the last good list rather than blanking the section.
         guard let scanned = await ListeningPortScanner.scan(), isVisible else { return }
         if scanned != ports { ports = scanned }
