@@ -20,9 +20,9 @@ struct PortsSection: View {
             .padding(.bottom, 3)
 
             if ports.ports.isEmpty {
-                placeholder("No listening ports.")
+                SectionMessage(text: "No listening ports.")
             } else if ports.visiblePorts.isEmpty {
-                placeholder("Nothing in this filter.")
+                SectionMessage(text: "Nothing in this filter.")
             } else {
                 ForEach(ports.visiblePorts) { port in PortRow(port: port) }
             }
@@ -36,15 +36,6 @@ struct PortsSection: View {
                     .padding(.vertical, 3)
             }
         }
-    }
-
-    private func placeholder(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 11.5))
-            .foregroundStyle(.tertiary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
     }
 }
 
@@ -96,7 +87,7 @@ private struct PortRow: View {
 
             if service?.isWebLike == true {
                 PillButton(title: "Open", symbol: "arrow.up.right.square") {
-                    if let url = URL(string: "http://localhost:\(port.port)") { Opener.open(url) }
+                    Opener.openLocalhost(port: Int(port.port))
                 }
                 .help("Open http://localhost:\(String(port.port))")
             }

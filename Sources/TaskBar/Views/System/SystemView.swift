@@ -61,19 +61,9 @@ struct SystemView: View {
             isExpanded: $isContainersExpanded
         ) {
             if !system.isDockerAvailable {
-                Text("Docker is not running.")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                SectionMessage(text: "Docker is not running.")
             } else if system.containers.isEmpty {
-                Text("No containers.")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                SectionMessage(text: "No containers.")
             } else {
                 ForEach(system.containers) { container in
                     ContainerRow(container: container, usage: system.containerUsage[container.id])
@@ -401,9 +391,7 @@ private struct ContainerRow: View {
                     Text(container.isRunning ? container.status : container.state.capitalized)
                         .lineLimit(1)
                     ForEach(container.publishedPorts.prefix(3), id: \.self) { port in
-                        Button(":\(String(port))") {
-                            if let url = URL(string: "http://localhost:\(port)") { Opener.open(url) }
-                        }
+                        Button(":\(String(port))") { Opener.openLocalhost(port: port) }
                         .buttonStyle(.plain)
                         .foregroundStyle(Color.accentColor)
                         .help("Open http://localhost:\(String(port))")

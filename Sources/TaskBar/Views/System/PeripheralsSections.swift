@@ -17,12 +17,7 @@ struct DevicesSection: View {
         } else if peripherals.needsBluetoothAccess {
             // Only when nothing else would show: explains why keyboard and mouse batteries are missing.
             CollapsibleSection(title: "Devices", count: nil, isExpanded: $isExpanded) {
-                Text("Allow Bluetooth access in System Settings › Privacy & Security to see keyboard and mouse batteries.")
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                SectionMessage(text: "Allow Bluetooth access in System Settings › Privacy & Security to see keyboard and mouse batteries.")
             }
         }
     }
@@ -104,12 +99,7 @@ struct DrivesSection: View {
     var body: some View {
         CollapsibleSection(title: "Drives", count: peripherals.volumes.count, isExpanded: $isExpanded) {
             if peripherals.volumes.isEmpty {
-                Text("No drives.")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                SectionMessage(text: "No drives.")
             } else {
                 ForEach(peripherals.volumes) { volume in DriveRow(volume: volume) }
             }
