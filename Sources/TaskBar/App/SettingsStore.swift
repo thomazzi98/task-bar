@@ -1,6 +1,7 @@
 import Carbon.HIToolbox
 import Foundation
 import Observation
+import TaskBarCore
 
 /// A global keyboard shortcut: a virtual key code plus Carbon modifier flags.
 struct KeyCombo: Codable, Equatable, Sendable {
@@ -150,9 +151,17 @@ final class SettingsStore {
         isEnabled(selection) ? selection : enabledTabs.first ?? .tasks
     }
 
-    /// The locale used for dictation.
+    /// The locale used for dictation: the chosen one, else the first preferred language the speech
+    /// engine supports, else the current locale.
     var dictationLocale: Locale {
-        dictationLocaleIdentifier.isEmpty ? .current : Locale(identifier: dictationLocaleIdentifier)
+        if !dictationLocaleIdentifier.isEmpty {
+            return Locale(identifier: dictationLocaleIdentifier)
+        }
+        let resolved = DictationLocaleResolver.resolve(
+            preferred: Locale.preferredLanguages,
+            supported: Dictation.supportedLocaleIdentifiers()
+        )
+        return resolved.map { Locale(identifier: $0) } ?? .current
     }
 
     // MARK: Shortcut persistence

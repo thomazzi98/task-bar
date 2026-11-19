@@ -16,6 +16,7 @@ struct NotesEditorSection: View {
 
     @Environment(TextAssistant.self) private var assistant
     @Environment(AppState.self) private var appState
+    @Environment(SettingsStore.self) private var settings
     /// Remembers whether the user prefers to open notes rendered or as raw text.
     @AppStorage("editor.opensInPreview") private var opensInPreview = false
     @State private var isPreviewing = false
@@ -48,6 +49,7 @@ struct NotesEditorSection: View {
     private var toolbar: some View {
         HStack(spacing: 2) {
             dictationButton
+            dictationLanguageMenu
             polishMenu
             if assistant.canRevert(targetID) {
                 IconButton(symbol: "arrow.uturn.backward", help: "Restore the text from before the rewrite") {
@@ -89,6 +91,58 @@ struct NotesEditorSection: View {
                 insertionOffset: proxy.insertionOffset
             ) { text = $0 }
         }
+    }
+
+    /// Shows the dictation language as a short code and switches it in one click.
+    private var dictationLanguageMenu: some View {
+        Menu {
+            languageItem("English (en-US)", identifier: "en-US")
+            languageItem("Português (Brasil) (pt-BR)", identifier: "pt-BR")
+            Divider()
+            ForEach(Dictation.commonLocaleIdentifiers.filter { $0 != "en-US" && $0 != "pt-BR" }, id: \.self) { identifier in
+                languageItem(
+                    "\(Locale.current.localizedString(forIdentifier: identifier) ?? identifier) (\(identifier))",
+                    identifier: identifier
+                )
+            }
+            Divider()
+            languageItem("System language", identifier: "")
+        } label: {
+            Text(dictationLanguageCode)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+                .frame(height: 24)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Dictation language")
+    }
+
+    private var dictationLanguageCode: String {
+        settings.dictationLocale.language.languageCode?.identifier.uppercased() ?? "--"
+    }
+
+    private func languageItem(_ title: String, identifier: String) -> some View {
+        Button {
+            selectDictationLanguage(identifier)
+        } label: {
+            if settings.dictationLocaleIdentifier == identifier {
+                Label(title, systemImage: "checkmark")
+            } else {
+                Text(title)
+            }
+        }
+    }
+
+    /// The language is read when dictation starts, so a running session is stopped and the next
+    /// one uses the new language.
+    private func selectDictationLanguage(_ identifier: String) {
+        guard settings.dictationLocaleIdentifier != identifier else { return }
+        settings.dictationLocaleIdentifier = identifier
+        assistant.stopDictation()
     }
 
     private var polishMenu: some View {
