@@ -68,8 +68,14 @@ public struct PeripheralDevice: Equatable, Identifiable, Sendable {
 /// Combines readings of the same device from different sources.
 public enum PeripheralMerge {
     /// Matches devices by name and keeps the more detailed reading. On a tie the reading from
-    /// `primary` wins. Devices without any battery level are left out.
+    /// `primary` wins. Devices without any battery level are left out, but still lend their kind:
+    /// a BLE keyboard reports its battery only over GATT, while `system_profiler` knows it is
+    /// a keyboard.
     public static func merge(_ primary: [PeripheralDevice], _ secondary: [PeripheralDevice]) -> [PeripheralDevice] {
+        var knownKinds: [String: PeripheralKind] = [:]
+        for device in primary + secondary where device.kind != .other {
+            knownKinds[device.id] = knownKinds[device.id] ?? device.kind
+        }
         var byID: [String: PeripheralDevice] = [:]
         for device in primary + secondary where device.hasBattery {
             guard let existing = byID[device.id] else {
@@ -80,6 +86,9 @@ public enum PeripheralMerge {
             var merged = best
             if merged.kind == .other { merged.kind = other.kind }
             byID[device.id] = merged
+        }
+        for (id, device) in byID where device.kind == .other {
+            byID[id]?.kind = knownKinds[id] ?? .other
         }
         return byID.values.sorted { lhs, rhs in
             lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
@@ -98,7 +107,8 @@ public enum BatteryLevelDecoder {
 
 /// Reads battery levels out of `system_profiler SPBluetoothDataType -json`.
 public enum PeripheralParser {
-    /// The connected Bluetooth devices that report a battery. Other devices are skipped.
+    /// The connected Bluetooth devices, with whatever battery levels they report. Devices
+    /// without a battery are kept so `PeripheralMerge` can learn their kind.
     public static func bluetoothDevices(profilerJSON data: Data) -> [PeripheralDevice] {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let sections = root["SPBluetoothDataType"] as? [[String: Any]] else {
@@ -118,7 +128,7 @@ public enum PeripheralParser {
                         rightLevel: percent(properties["device_batteryLevelRight"]),
                         caseLevel: percent(properties["device_batteryLevelCase"])
                     )
-                    if device.hasBattery { devices.append(device) }
+                    devices.append(device)
                 }
             }
         }

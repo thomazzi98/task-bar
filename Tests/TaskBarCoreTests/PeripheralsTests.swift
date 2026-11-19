@@ -63,7 +63,7 @@ struct PeripheralsTests {
     @Test func parsesBatteryLevelsOfConnectedDevices() {
         let devices = PeripheralParser.bluetoothDevices(profilerJSON: Data(Self.profilerJSON.utf8))
 
-        #expect(devices.map(\.name) == ["Magic Keyboard", "Magic Mouse", "Rafael's AirPods Pro"])
+        #expect(devices.map(\.name) == ["Magic Keyboard", "Magic Mouse", "Rafael's AirPods Pro", "Desk Speaker"])
 
         let keyboard = devices[0]
         #expect(keyboard.kind == .keyboard)
@@ -82,10 +82,26 @@ struct PeripheralsTests {
         #expect(airPods.level == nil)
     }
 
-    @Test func skipsDevicesWithoutABatteryAndDisconnectedOnes() {
+    @Test func skipsDisconnectedDevicesAndKeepsBatteryLessOnesWithoutALevel() {
         let devices = PeripheralParser.bluetoothDevices(profilerJSON: Data(Self.profilerJSON.utf8))
-        #expect(!devices.contains { $0.name == "Desk Speaker" })
         #expect(!devices.contains { $0.name == "Old Trackpad" })
+        let speaker = devices.first { $0.name == "Desk Speaker" }
+        #expect(speaker?.hasBattery == false)
+    }
+
+    @Test func mergeDropsBatteryLessDevicesButKeepsTheirKind() {
+        // A BLE keyboard: system_profiler knows the kind but not the battery, GATT the reverse.
+        let profiler = [
+            PeripheralDevice(name: "Pebble K380s", kind: .keyboard, level: nil, leftLevel: nil, rightLevel: nil, caseLevel: nil),
+            PeripheralDevice(name: "Desk Speaker", kind: .other, level: nil, leftLevel: nil, rightLevel: nil, caseLevel: nil)
+        ]
+        let gatt = [PeripheralDevice(name: "Pebble K380s", kind: .other, level: 64, leftLevel: nil, rightLevel: nil, caseLevel: nil)]
+
+        let merged = PeripheralMerge.merge(gatt, profiler)
+
+        #expect(merged.map(\.name) == ["Pebble K380s"])
+        #expect(merged.first?.kind == .keyboard)
+        #expect(merged.first?.level == 64)
     }
 
     @Test func toleratesMalformedInput() {

@@ -126,13 +126,10 @@ final class PeripheralsViewModel {
         publishDevices()
     }
 
-    /// Merges the sources. Each source is first merged with the ones before it, so the more
-    /// detailed reading of a device wins, as in `PeripheralMerge`.
+    /// Merges the sources in one pass, so the more detailed reading of a device wins and a
+    /// battery-less `system_profiler` entry can still name the kind of a GATT-only device.
     private func publishDevices() {
-        let merged = PeripheralMerge.merge(
-            PeripheralMerge.merge(bluetoothDevices, registryDevices),
-            batteryServiceDevices
-        )
+        let merged = PeripheralMerge.merge(bluetoothDevices + registryDevices, batteryServiceDevices)
         if merged != devices { devices = merged }
     }
 
