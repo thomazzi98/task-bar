@@ -275,8 +275,8 @@ the GitHub CLI fetches with your own `gh` login.
 
 **Ask** also goes through your Claude Code login: each question sends a summary of this Mac's state
 (process names, CPU and memory use, listening ports, container names, drives) and your recent messages
-to Claude. Command-line arguments are never included. The summary and the conversation are kept in
-memory only and are never written to disk.
+to Claude. Command-line arguments are never included. The conversation is kept in memory only. The
+summary passes to Claude through a temporary file that is deleted as soon as the call ends.
 
 Your data is human-readable JSON in `~/Library/Application Support/TaskBar/`: `tasks.json`,
 `notes.json`, `links.json`, `clipboard.json` (the clipboard history) and `git-repos.json`. A task looks like this:
