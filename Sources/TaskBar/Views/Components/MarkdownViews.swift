@@ -105,23 +105,29 @@ struct MarkdownPreview: View {
     let text: String
     /// Called with the source line of a checkbox the user clicked.
     var onToggleCheckbox: ((Int) -> Void)?
+    /// `false` when the Markdown sits inside another scroll view, such as a chat transcript.
+    var scrolls = true
 
     var body: some View {
         let blocks = MarkdownBlockParser.parse(text)
-        ScrollView {
-            VStack(alignment: .leading, spacing: 5) {
-                if blocks.isEmpty {
-                    Text("Nothing to preview yet.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.tertiary)
-                }
-                ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                    blockView(block)
-                }
+        let content = VStack(alignment: .leading, spacing: 5) {
+            if blocks.isEmpty {
+                Text("Nothing to preview yet.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.tertiary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                blockView(block)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+
+        if scrolls {
+            ScrollView { content }
+        } else {
+            content
         }
     }
 

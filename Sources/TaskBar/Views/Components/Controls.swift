@@ -446,6 +446,7 @@ struct BackBar<Trailing: View>: View {
 /// A text field that adds an item on Return and stays focused for the next one.
 struct QuickAddField: View {
     let placeholder: String
+    var symbol = "plus"
     /// When `true`, the field takes focus whenever the popover asks for its primary field.
     var isPrimary = false
     let onSubmit: (String) -> Void
@@ -456,7 +457,7 @@ struct QuickAddField: View {
 
     var body: some View {
         HStack(spacing: 7) {
-            Image(systemName: "plus")
+            Image(systemName: symbol)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(isFocused ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary))
             TextField(placeholder, text: $text)

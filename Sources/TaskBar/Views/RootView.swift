@@ -65,6 +65,7 @@ struct RootView: View {
             case .links: LinksView()
             case .clipboard: ClipboardView()
             case .agents: AgentsView()
+            case .ask: AskView()
             case .git: GitView()
             case .calendar: AgendaView()
             case .system: SystemView()

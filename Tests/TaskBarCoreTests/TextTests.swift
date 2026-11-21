@@ -44,7 +44,7 @@ struct TextPolishingTests {
     }
 
     @Test func buildsAnIsolatedHeadlessInvocation() throws {
-        let arguments = ClaudeCLIPolisher.arguments(model: "haiku", systemPrompt: "SYSTEM", sessionID: "abc-123")
+        let arguments = ClaudeCLI.arguments(model: "haiku", systemPrompt: "SYSTEM", sessionID: "abc-123")
         #expect(arguments.first == "--print")
         #expect(arguments.contains("--no-session-persistence"))
         #expect(arguments.contains("--strict-mcp-config"))

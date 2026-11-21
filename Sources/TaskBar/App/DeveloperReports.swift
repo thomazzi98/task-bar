@@ -256,7 +256,28 @@ enum DeveloperReports {
         }
     }
 
+
+    /// Sends one question to the Mac assistant and prints what it would show. Actions are listed,
+    /// never run.
+    static func ask(question: String) async throws {
+        let report = MachineReport.text(for: await MachineSnapshotCollector().collect())
+        print(report)
+
+        guard let executable = ClaudeCLILocator.locate() else {
+            throw ClaudeCLI.Failure.failed("Claude Code is not installed on this Mac.")
+        }
+        let assistant = ClaudeAssistant(executable: executable, projectsDirectory: AppPaths.live().claudeProjectsDirectory)
+        let reply = AssistantReply.parse(try await assistant.answer(question: question, report: report, history: []))
+
+        print("\n--- answer ---")
+        print(reply.text)
+        print("\n--- proposed actions (listed only, not run) ---")
+        if reply.actions.isEmpty { print("none") }
+        for action in reply.actions { print("- \(action.title)") }
+    }
+
     private struct NotAGitRepository: LocalizedError {
+
         let path: String
         var errorDescription: String? { "not inside a git repository: \(path)" }
     }

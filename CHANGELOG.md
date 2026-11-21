@@ -4,6 +4,14 @@ All notable changes to TaskBar are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Ask** tab: ask Claude about this Mac. Answers are based on a live snapshot (CPU, memory, processes,
+  ports, containers, devices and drives). Proposed actions (quit, force quit, stop a container, open a
+  web address) appear as buttons that run only after confirmation. The conversation is in memory only.
+
 ## [0.2.0] - 2026-11-19
 
 ### Added

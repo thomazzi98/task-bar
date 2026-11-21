@@ -81,6 +81,14 @@ dependencies that does no work at all while its popover is closed.
     (Vite, Node, PostgreSQL, Redis, MongoDB…), an **Open** button for web servers and a stop button
     that asks first. Doubles as a quick check of which local databases are up.
 
+### Ask about your Mac
+
+- **Ask** — ask a question in plain language, such as "Why is my CPU so high?" or "What's using my
+  memory?". Claude answers from a live snapshot of this Mac (processes, usage, ports, containers) and
+  can propose actions, such as quitting a process or stopping a container. Each one appears as a
+  button and runs only after you confirm it. The conversation stays in memory and is gone on New chat
+  or when TaskBar quits.
+
 ### Links, clipboard, Git and usage
 
 <img align="right" width="300" alt="The Git dashboard" src="docs/screenshots/git-light.png">
@@ -264,6 +272,11 @@ URLs can only show the app or add content. Nothing can be deleted or read throug
 Everything stays on your Mac. The exceptions are "Tidy up" with the Claude engine, which sends the
 note you asked to rewrite through your own Claude Code login, and the Git tab's pull requests, which
 the GitHub CLI fetches with your own `gh` login.
+
+**Ask** also goes through your Claude Code login: each question sends a summary of this Mac's state
+(process names, CPU and memory use, listening ports, container names, drives) and your recent messages
+to Claude. Command-line arguments are never included. The conversation is kept in memory only. The
+summary passes to Claude through a temporary file that is deleted as soon as the call ends.
 
 Your data is human-readable JSON in `~/Library/Application Support/TaskBar/`: `tasks.json`,
 `notes.json`, `links.json`, `clipboard.json` (the clipboard history) and `git-repos.json`. A task looks like this:

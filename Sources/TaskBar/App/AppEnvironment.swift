@@ -27,6 +27,7 @@ final class AppEnvironment {
     let clipboard: ClipboardViewModel
     let peripherals = PeripheralsViewModel()
     let git: GitViewModel
+    let ask = AssistantViewModel()
 
     // MARK: Services
 
@@ -69,6 +70,7 @@ final class AppEnvironment {
             .environment(peripherals)
             .environment(assistant)
             .environment(git)
+            .environment(ask)
             .environment(\.appActions, actions)
             // View-level preferences (`@AppStorage`) share the injected store too.
             .defaultAppStorage(defaults)
@@ -294,7 +296,7 @@ final class AppEnvironment {
             return links.stepBack()
         case .git:
             return git.closeDetail()
-        case .clipboard, .calendar, .system:
+        case .clipboard, .ask, .calendar, .system:
             return false
         }
     }

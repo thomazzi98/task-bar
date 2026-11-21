@@ -60,6 +60,10 @@ enum SnapshotRenderer {
             environment.usage.section = .usage
             environment.appState.select(.agents)
         },
+        Scene(name: "ask") { environment, _ in
+            environment.appState.select(.ask)
+            environment.ask.applyPreview(messages: askConversation)
+        },
         Scene(name: "calendar") { environment, _ in
             environment.agents.select(nil)
             environment.usage.section = .sessions
@@ -97,6 +101,22 @@ enum SnapshotRenderer {
         Scene(name: "settings") { environment, _ in
             environment.appState.isShowingSettings = true
         }
+    ]
+
+    /// A sample Ask conversation with proposed actions. Nothing here reads the real machine.
+    private static let askConversation: [AskMessage] = [
+        AskMessage(role: .user, text: "Why is my CPU so high?"),
+        AskMessage(
+            role: .assistant,
+            text: "Six `yes` processes are each using about 90% of a core, which is most of the machine's CPU. "
+                + "They do no useful work, so they can be stopped.\n\n"
+                + "- Quit the two with the highest CPU first and check whether the load drops.\n"
+                + "- Nothing else in the snapshot is busy.",
+            actions: [
+                AskAction(proposal: .quit(pid: 4011, name: "yes")),
+                AskAction(proposal: .quit(pid: 4012, name: "yes"))
+            ]
+        )
     ]
 
     /// Renders all scenes in light and dark appearance, plus a combined banner for each.
