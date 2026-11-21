@@ -38,7 +38,8 @@ public enum ProcessRunner {
         arguments: [String],
         input: Data = Data(),
         workingDirectory: URL? = nil,
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        scratchRoot: URL? = nil
     ) async throws -> ProcessOutput {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
@@ -48,7 +49,8 @@ public enum ProcessRunner {
                         arguments: arguments,
                         input: input,
                         workingDirectory: workingDirectory,
-                        timeout: timeout
+                        timeout: timeout,
+                        scratchRoot: scratchRoot
                     )
                 })
             }
@@ -56,15 +58,19 @@ public enum ProcessRunner {
     }
 
     /// Runs the command on the calling thread and waits for it to finish or time out.
+    ///
+    /// The scratch folder holding stdin and stderr is removed on every path, including launch
+    /// failures and timeouts, so nothing from the run stays on disk.
     public static func runBlocking(
         executable: URL,
         arguments: [String],
         input: Data = Data(),
         workingDirectory: URL? = nil,
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        scratchRoot: URL? = nil
     ) throws -> ProcessOutput {
         let fileManager = FileManager.default
-        let scratch = fileManager.temporaryDirectory
+        let scratch = (scratchRoot ?? fileManager.temporaryDirectory)
             .appendingPathComponent("taskbar-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: scratch, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: scratch) }
