@@ -28,6 +28,7 @@ enum DeveloperCommand {
     case devices
     case tokenUsage(period: UsagePeriod)
     case git(path: String)
+    case ask(question: String)
 
     static let usage = """
     TaskBar — menu bar productivity app. Run without arguments to start the app.
@@ -53,6 +54,8 @@ enum DeveloperCommand {
       --devices                        List connected peripherals and their battery levels.
       --usage [today|7d|30d|all]      Summarise Claude Code token usage (default 7d).
       --git <path>                     Summarise the Git repository at that path.
+      --ask "<question>"               Ask the Mac assistant once: print the snapshot it would get,
+                                       then its answer and proposed actions. Never runs an action.
       --help                           Show this message.
     """
 
@@ -117,6 +120,9 @@ enum DeveloperCommand {
         case "--git":
             guard let path = value(after: "--git") else { return nil }
             self = .git(path: path)
+        case "--ask":
+            guard let question = value(after: "--ask"), !question.isEmpty else { return nil }
+            self = .ask(question: question)
         default:
             // Unknown flags (macOS passes some of its own) start the app normally.
             return nil
@@ -144,6 +150,7 @@ enum DeveloperCommand {
             case .devices: DeveloperReports.devices()
             case .tokenUsage(let period): await DeveloperReports.usage(period: period)
             case .git(let path): try await DeveloperReports.git(path: path)
+            case .ask(let question): try await DeveloperReports.ask(question: question)
             }
             return 0
         } catch {
